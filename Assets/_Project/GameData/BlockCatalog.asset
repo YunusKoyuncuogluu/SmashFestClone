@@ -1,0 +1,119 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b9933863b02e8944aa210a0548705c96, type: 3}
+  m_Name: BlockCatalog
+  m_EditorClassIdentifier: SmashFast.Runtime::SmashFast.Data.BlockCatalogSO
+  blocks:
+  - blockName: Crate
+    blockId: 1
+    prefab: {fileID: 8100000000000000001, guid: 8e2b6c1a4f904d7e9a3b5c8d0e1f2a34, type: 3}
+    previewMesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
+    baseScale: {x: 1, y: 1, z: 1}
+    sizeInCells: {x: 1, y: 1, z: 1}
+    editorColor: {r: 0.86, g: 0.42, b: 0.24, a: 1}
+    isKinematicBase: 0
+    mass: 1.2
+    materialType: 1
+    shapeRole: 1
+    canSupportBlocksAbove: 1
+    impactBreakThreshold: 3.5
+  - blockName: Stone
+    blockId: 2
+    prefab: {fileID: 8100000000000000001, guid: 8e2b6c1a4f904d7e9a3b5c8d0e1f2a34, type: 3}
+    previewMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+    baseScale: {x: 1, y: 1, z: 1}
+    sizeInCells: {x: 1, y: 1, z: 1}
+    editorColor: {r: 0.42, g: 0.66, b: 0.78, a: 1}
+    isKinematicBase: 0
+    mass: 3.4
+    materialType: 2
+    shapeRole: 1
+    canSupportBlocksAbove: 1
+    impactBreakThreshold: 6
+  - blockName: Plank
+    blockId: 3
+    prefab: {fileID: 8100000000000000001, guid: 8e2b6c1a4f904d7e9a3b5c8d0e1f2a34, type: 3}
+    previewMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+    baseScale: {x: 1, y: 1, z: 1}
+    sizeInCells: {x: 3, y: 1, z: 1}
+    editorColor: {r: 0.93, g: 0.76, b: 0.28, a: 1}
+    isKinematicBase: 0
+    mass: 0.7
+    materialType: 1
+    shapeRole: 2
+    canSupportBlocksAbove: 1
+    impactBreakThreshold: 3.5
+  - blockName: HalfTable
+    blockId: 4
+    prefab: {fileID: 8100000000000000001, guid: 8e2b6c1a4f904d7e9a3b5c8d0e1f2a34, type: 3}
+    previewMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+    baseScale: {x: 1, y: 1, z: 1}
+    sizeInCells: {x: 2, y: 2, z: 1}
+    editorColor: {r: 0.72, g: 0.48, b: 0.28, a: 1}
+    isKinematicBase: 1
+    mass: 2.4
+    materialType: 0
+    shapeRole: 0
+    canSupportBlocksAbove: 1
+    impactBreakThreshold: 99
+  - blockName: FullTable
+    blockId: 5
+    prefab: {fileID: 8100000000000000001, guid: 8e2b6c1a4f904d7e9a3b5c8d0e1f2a34, type: 3}
+    previewMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+    baseScale: {x: 1, y: 1, z: 1}
+    sizeInCells: {x: 4, y: 2, z: 2}
+    editorColor: {r: 0.55, g: 0.34, b: 0.2, a: 1}
+    isKinematicBase: 1
+    mass: 4.5
+    materialType: 0
+    shapeRole: 0
+    canSupportBlocksAbove: 1
+    impactBreakThreshold: 99
+  - blockName: Glass
+    blockId: 6
+    prefab: {fileID: 8100000000000000001, guid: 8e2b6c1a4f904d7e9a3b5c8d0e1f2a34, type: 3}
+    previewMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+    baseScale: {x: 1, y: 1, z: 1}
+    sizeInCells: {x: 1, y: 1, z: 1}
+    editorColor: {r: 0.62, g: 0.9, b: 1, a: 1}
+    isKinematicBase: 0
+    mass: 0.45
+    materialType: 3
+    shapeRole: 1
+    canSupportBlocksAbove: 1
+    impactBreakThreshold: 2.5
+  - blockName: Jar
+    blockId: 7
+    prefab: {fileID: 8100000000000000001, guid: 8e2b6c1a4f904d7e9a3b5c8d0e1f2a34, type: 3}
+    previewMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+    baseScale: {x: 1, y: 1, z: 1}
+    sizeInCells: {x: 1, y: 1, z: 1}
+    editorColor: {r: 0.35, g: 0.75, b: 0.45, a: 1}
+    isKinematicBase: 0
+    mass: 0.5
+    materialType: 4
+    shapeRole: 3
+    canSupportBlocksAbove: 0
+    impactBreakThreshold: 2.2
+  - blockName: Ornament
+    blockId: 8
+    prefab: {fileID: 8100000000000000001, guid: 8e2b6c1a4f904d7e9a3b5c8d0e1f2a34, type: 3}
+    previewMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+    baseScale: {x: 1, y: 1, z: 1}
+    sizeInCells: {x: 1, y: 1, z: 1}
+    editorColor: {r: 0.95, g: 0.85, b: 0.3, a: 1}
+    isKinematicBase: 0
+    mass: 0.35
+    materialType: 1
+    shapeRole: 4
+    canSupportBlocksAbove: 0
+    impactBreakThreshold: 3.5

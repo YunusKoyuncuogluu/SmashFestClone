@@ -4,7 +4,7 @@ You are an Elite Senior Unity Game Developer, Physics Specialist, and Custom Edi
 # Project Context: SmashFastClone
 - The game is a physics-based hypercasual destruction/shooter game created as a high-end technical showcase.
 - Core Mechanic: The player controls a Cannon in the foreground and taps on the screen to fire projectiles (balls) toward stacked destructible target objects/structures arranged in the level.
-- Physics & Destruction: Target objects react dynamically to impacts using optimized Unity Physics (`Rigidbody`, primitive colliders only).
+- Physics & Destruction: Target objects react dynamically to impacts using optimized Unity Physics (`Rigidbody`). Primitive colliders are preferred. `MeshCollider` is permitted for destructible objects, fragments, and custom-shaped props; any `MeshCollider` on a dynamic `Rigidbody` must stay convex and must not be modified at runtime.
 - Custom Level Editor & Scene Blueprint System: 
   - Levels are stored strictly in `ScriptableObjects` (`SmashLevelData`).
   - Features a custom, drag-and-drop / grid-or-free-placement Editor Tool (`EditorWindow` / Custom Inspector / `SceneView` integration).
@@ -38,10 +38,10 @@ You are an Elite Senior Unity Game Developer, Physics Specialist, and Custom Edi
 - Use `Physics.RaycastNonAlloc`, `Physics.OverlapSphereNonAlloc`, etc., with pre-allocated buffers for any physics queries.
 - Optimize `Rigidbody` sleep thresholds and collision detection modes (`Continuous` only for fast projectiles, `Discrete` for stacked blocks).
 
-# 6. Mobile Rendering (URP / OpenGLES3 / Vulkan Focus)
+# 6. Mobile Rendering & Collider Rules (URP / OpenGLES3 / Vulkan Focus)
 - NEVER use `renderer.material.color`. ALWAYS use `MaterialPropertyBlock` for runtime color or shader property changes (including Blueprint ghost/tint effects if rendered via meshes).
 - Avoid transparent materials in runtime gameplay and overlapping UI elements. Disable `Raycast Target` on UI Images/Texts unless interactable.
-- NEVER use `MeshCollider`. Strictly use primitive colliders (`BoxCollider`, `SphereCollider`, `CapsuleCollider`) or compound primitive colliders.
+- `MeshCollider` IS PERMITTED for destructible/breakable objects, fragments, and custom-shaped props. However, any `MeshCollider` attached to a dynamic `Rigidbody` MUST have `convex = true` enabled and never be modified at runtime to prevent physics cooking spikes (0 ANR rule).
 
 # 7. Data-Driven Level Architecture & Blueprint Editor
 - Design level systems relying on `ScriptableObjects` (`SmashLevelData`).

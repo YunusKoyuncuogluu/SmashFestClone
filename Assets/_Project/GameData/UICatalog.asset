@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c40c05446adde7f489b93f2f2f59a7cf, type: 3}
+  m_Name: UICatalog
+  m_EditorClassIdentifier: SmashFast.Runtime::SmashFast.UI.UICatalogSO
+  canvasPrefab: {fileID: 7136256844418037930, guid: 0f4f64b05acfaf541922a495014206b3, type: 3}
+  mainMenuPanelPrefab: {fileID: 1518115060836005846, guid: 500b5b1dbe96d4f42a8daeeddfc4c395, type: 3}
+  gameHudPanelPrefab: {fileID: 9076934907432398010, guid: 9e32036ae8f738a41b6bbb2c77faa660, type: 3}
+  successPanelPrefab: {fileID: 3274270384222281389, guid: 0d8317233066235468ed7d16c4956688, type: 3}
+  failPanelPrefab: {fileID: 9011840829617785219, guid: df64235aaab701247a0a7d40d9e6a89f, type: 3}
+  settingsPopupPrefab: {fileID: 6593531784855074068, guid: a4a34a845ea7d35489fdf9d39d9e40a4, type: 3}

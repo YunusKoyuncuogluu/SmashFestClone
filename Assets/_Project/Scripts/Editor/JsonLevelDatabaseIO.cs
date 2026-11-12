@@ -16,9 +16,7 @@ namespace SmashFast.LevelEditor
                 string json = File.ReadAllText(absolutePath);
                 repository.LoadFromJson(json);
                 if (repository.LevelCount > 0)
-                {
                     return repository;
-                }
             }
 
             repository.UpsertRecord(repository.CreateDefaultRecord(1));
@@ -29,9 +27,7 @@ namespace SmashFast.LevelEditor
         public void Save(JsonLevelRepository repository, bool prettyPrint)
         {
             if (repository == null)
-            {
                 return;
-            }
 
             EnsureJsonFolder();
             string absolutePath = GetAbsoluteJsonPath();
@@ -67,14 +63,10 @@ namespace SmashFast.LevelEditor
         private void EnsureJsonFolder()
         {
             if (!AssetDatabase.IsValidFolder("Assets/_Project/Resources"))
-            {
                 AssetDatabase.CreateFolder("Assets/_Project", "Resources");
-            }
 
             if (!AssetDatabase.IsValidFolder(LevelAssetPaths.LevelsJsonFolder))
-            {
                 AssetDatabase.CreateFolder("Assets/_Project/Resources", "Levels");
-            }
         }
     }
 }

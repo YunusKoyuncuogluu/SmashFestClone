@@ -63,13 +63,9 @@ namespace SmashFast.LevelEditor
             }
 
             if (!editSeeds)
-            {
                 EditorGUILayout.HelpBox("Seeds are auto-generated from Cell Count and Random Seed. Enable Edit Seeds Manually to place impact-focused seeds in the Scene View.", MessageType.Info);
-            }
             else
-            {
                 EditorGUILayout.HelpBox("Drag seed handles in the Scene View to concentrate fractures near an impact point.", MessageType.Info);
-            }
 
             bool previewOffsetChanged = serializedObject.ApplyModifiedProperties();
             if (previewOffsetChanged && controller.HasPreview)
@@ -107,25 +103,19 @@ namespace SmashFast.LevelEditor
 
             GUI.backgroundColor = new Color(0.55f, 1f, 0.55f, 1f);
             if (GUILayout.Button("Bake Fracture to Prefab/Scene", GUILayout.Height(30f)))
-            {
                 BakeFracture(controller);
-            }
 
             GUI.backgroundColor = previous;
 
             if (controller.HasPreview)
-            {
                 EditorGUILayout.HelpBox("Preview active. Scrub Preview Explosion Offset to inspect interior cuts and UVs.", MessageType.None);
-            }
         }
 
         private void OnSceneGUI()
         {
             CellFractureController controller = (CellFractureController)target;
             if (!controller.EditSeedsManually)
-            {
                 return;
-            }
 
             serializedObject.Update();
             controller.EnsureSeedListSize();

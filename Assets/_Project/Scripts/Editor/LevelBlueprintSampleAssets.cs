@@ -39,15 +39,11 @@ namespace SmashFast.LevelEditor
             SerializedProperty catalogProperty = serializedDatabase.FindProperty("blockCatalog");
             SerializedProperty jsonProperty = serializedDatabase.FindProperty("levelsJson");
             if (catalogProperty != null)
-            {
                 catalogProperty.objectReferenceValue = catalog;
-            }
 
             TextAsset levelsJson = AssetDatabase.LoadAssetAtPath<TextAsset>(LevelAssetPaths.LevelsJsonPath);
             if (jsonProperty != null)
-            {
                 jsonProperty.objectReferenceValue = levelsJson;
-            }
 
             serializedDatabase.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(database);
@@ -78,9 +74,7 @@ namespace SmashFast.LevelEditor
         {
             string combined = parent + "/" + folderName;
             if (AssetDatabase.IsValidFolder(combined))
-            {
                 return;
-            }
 
             AssetDatabase.CreateFolder(parent, folderName);
         }

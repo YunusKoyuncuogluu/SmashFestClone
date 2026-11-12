@@ -74,20 +74,14 @@ namespace SmashFast.LevelEditor
             moveGhost = movingGhost;
             overwriteCount = 0;
             if (overwriteSource == null || overwriteSourceCount <= 0)
-            {
                 return;
-            }
 
             int copyCount = overwriteSourceCount;
             if (copyCount > overwritePlacements.Length)
-            {
                 copyCount = overwritePlacements.Length;
-            }
 
             for (int i = 0; i < copyCount; i++)
-            {
                 overwritePlacements[i] = overwriteSource[i];
-            }
 
             overwriteCount = copyCount;
         }
@@ -100,9 +94,7 @@ namespace SmashFast.LevelEditor
         public void Enable()
         {
             if (isEnabled)
-            {
                 return;
-            }
 
             SceneView.duringSceneGui += OnSceneGui;
             isEnabled = true;
@@ -111,9 +103,7 @@ namespace SmashFast.LevelEditor
         public void Disable()
         {
             if (!isEnabled)
-            {
                 return;
-            }
 
             SceneView.duringSceneGui -= OnSceneGui;
             DestroyAllPreviews();
@@ -130,9 +120,7 @@ namespace SmashFast.LevelEditor
 
             Event currentEvent = Event.current;
             if (currentEvent == null || currentEvent.type != EventType.Repaint)
-            {
                 return;
-            }
 
             CompareFunction previousTest = Handles.zTest;
             Color previousColor = Handles.color;
@@ -167,9 +155,7 @@ namespace SmashFast.LevelEditor
         private void ResolveGroundAnchor()
         {
             if (installer == null)
-            {
                 installer = Object.FindFirstObjectByType<GameSceneInstaller>();
-            }
 
             groundAnchor = installer != null ? groundAnchorResolver.Resolve(installer.GroundCollider) : Vector3.zero;
         }
@@ -200,9 +186,7 @@ namespace SmashFast.LevelEditor
             }
 
             for (int i = count; i < placedPreviews.Count; i++)
-            {
                 SetPreviewActive(placedPreviews[i], false);
-            }
         }
 
         private void SyncHoverPreview()
@@ -221,9 +205,7 @@ namespace SmashFast.LevelEditor
             }
 
             if (hoverPreview == null)
-            {
                 hoverPreview = new PreviewInstance();
-            }
 
             BlockPlacementData ghostPlacement = new BlockPlacementData();
             ghostPlacement.blockId = hoverBlockId;
@@ -254,9 +236,7 @@ namespace SmashFast.LevelEditor
             }
 
             if (movePreview == null)
-            {
                 movePreview = new PreviewInstance();
-            }
 
             SyncPreview(movePreview, moveGhost.target, true);
             DrawFootprintWire(levelData, moveGhost.target, ColorForStatus(moveGhost.status));
@@ -299,27 +279,19 @@ namespace SmashFast.LevelEditor
             preview.blockId = definition.blockId;
             SpawnedBlock spawnedBlock = preview.instance.GetComponent<SpawnedBlock>();
             if (spawnedBlock != null)
-            {
                 spawnedBlock.ApplyEditorPreviewVisuals(scale, catalog.GetScale(), catalog.GetTableHeightFactor(levelData.CellSize.y), sizeInCells);
-            }
             else
-            {
                 transform.localScale = Vector3.Scale(scale, Vector3.one * catalog.GetScale());
-            }
 
             if (!preview.instance.activeSelf)
-            {
                 preview.instance.SetActive(true);
-            }
         }
 
         private GameObject CreatePreviewInstance(GameObject prefab)
         {
             GameObject instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
             if (instance == null)
-            {
                 instance = Object.Instantiate(prefab);
-            }
 
             instance.name = "BlueprintPreview_" + prefab.name;
             instance.hideFlags = PreviewHideFlags;
@@ -328,19 +300,15 @@ namespace SmashFast.LevelEditor
             return instance;
         }
 
-        private static void PreparePreviewInstance(GameObject instance)
+        private void PreparePreviewInstance(GameObject instance)
         {
             Transform[] transforms = instance.GetComponentsInChildren<Transform>(true);
             for (int i = 0; i < transforms.Length; i++)
-            {
                 transforms[i].gameObject.hideFlags = PreviewHideFlags;
-            }
 
             SpawnedBlock spawnedBlock = instance.GetComponent<SpawnedBlock>();
             if (spawnedBlock != null)
-            {
                 spawnedBlock.ApplyEditorPreviewVisuals();
-            }
 
             Rigidbody[] bodies = instance.GetComponentsInChildren<Rigidbody>(true);
             for (int i = 0; i < bodies.Length; i++)
@@ -352,15 +320,11 @@ namespace SmashFast.LevelEditor
 
             Collider[] colliders = instance.GetComponentsInChildren<Collider>(true);
             for (int i = 0; i < colliders.Length; i++)
-            {
                 colliders[i].enabled = false;
-            }
 
             MonoBehaviour[] behaviours = instance.GetComponentsInChildren<MonoBehaviour>(true);
             for (int i = 0; i < behaviours.Length; i++)
-            {
                 behaviours[i].enabled = false;
-            }
         }
 
         private Vector3 ResolveTargetScale(BlockDefinition definition, Vector3Int sizeInCells)
@@ -368,14 +332,10 @@ namespace SmashFast.LevelEditor
             bool foundationTable = definition.shapeRole == BlockShapeRole.FoundationTable
                 || definition.materialType == BlockMaterialType.TableFoundation;
             if (foundationTable)
-            {
                 return Vector3.one;
-            }
 
             if (IsCompoundPrefab(definition.prefab))
-            {
                 return levelData.GetCellWorldScale(definition.baseScale);
-            }
 
             return levelData.GetFootprintWorldScale(definition.baseScale, sizeInCells);
         }
@@ -385,18 +345,14 @@ namespace SmashFast.LevelEditor
             int prefabId = prefab.GetInstanceID();
             bool isCompound;
             if (prefabIsCompound.TryGetValue(prefabId, out isCompound))
-            {
                 return isCompound;
-            }
 
             MeshFilter[] filters = prefab.GetComponentsInChildren<MeshFilter>(true);
             int meshCount = 0;
             for (int i = 0; i < filters.Length; i++)
             {
                 if (filters[i] != null && filters[i].sharedMesh != null)
-                {
                     meshCount++;
-                }
             }
 
             isCompound = meshCount > 1;
@@ -411,14 +367,10 @@ namespace SmashFast.LevelEditor
             {
                 BlockPlacementData placement;
                 if (!levelData.TryGetPlacementByIndex(i, out placement))
-                {
                     continue;
-                }
 
                 if (moveGhost.showOrigin && placement.gridPosition == moveGhost.origin.gridPosition)
-                {
                     continue;
-                }
 
                 BlockDefinition definition = default;
                 bool hasDefinition = catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition);
@@ -445,9 +397,7 @@ namespace SmashFast.LevelEditor
             Vector3Int sizeInCells = levelData.GetSizeInCells(placement, catalog);
             BlockDefinition definition;
             if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition))
-            {
                 baseScale = definition.baseScale;
-            }
 
             return levelData.GetWorldMatrix(placement, baseScale, sizeInCells, catalog);
         }
@@ -501,14 +451,10 @@ namespace SmashFast.LevelEditor
             Vector3Int dimensions = level.GridDimensions;
             int layer = selectedZLayer;
             if (layer < 0)
-            {
                 layer = 0;
-            }
 
             if (layer >= dimensions.z)
-            {
                 layer = dimensions.z - 1;
-            }
 
             Vector3 cell = level.GetScaledCellSize(catalog);
             Vector3 origin = level.OriginOffset + level.GetHorizontalCenterShift(catalog);
@@ -543,21 +489,15 @@ namespace SmashFast.LevelEditor
         private void DrawHoveredEntities(LevelData level)
         {
             if (!hasExistingHover && overwriteCount <= 0)
-            {
                 return;
-            }
 
             CompareFunction previousTest = Handles.zTest;
             Handles.zTest = CompareFunction.Always;
             for (int i = 0; i < overwriteCount; i++)
-            {
                 DrawFootprintWire(level, overwritePlacements[i], new Color(1f, 0.38f, 0.1f, 1f));
-            }
 
             if (hasExistingHover && !ContainsOverwriteAnchor(existingHoverPlacement.gridPosition))
-            {
                 DrawFootprintWire(level, existingHoverPlacement, new Color(1f, 0.95f, 0.45f, 1f));
-            }
 
             Handles.zTest = previousTest;
         }
@@ -568,9 +508,7 @@ namespace SmashFast.LevelEditor
             Vector3Int sizeInCells = level.GetSizeInCells(placement, catalog);
             BlockDefinition definition;
             if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition))
-            {
                 baseScale = definition.baseScale;
-            }
 
             Matrix4x4 matrix = level.GetWorldMatrix(placement, baseScale, sizeInCells, catalog);
             CompareFunction previousTest = Handles.zTest;
@@ -616,9 +554,7 @@ namespace SmashFast.LevelEditor
             for (int i = 0; i < overwriteCount; i++)
             {
                 if (overwritePlacements[i].gridPosition == anchor)
-                {
                     return true;
-                }
             }
 
             return false;
@@ -627,14 +563,10 @@ namespace SmashFast.LevelEditor
         private Color ColorForStatus(PlacementValidationStatus status)
         {
             if (status == PlacementValidationStatus.ValidEmpty)
-            {
                 return new Color(0.25f, 1f, 0.4f, 0.9f);
-            }
 
             if (status == PlacementValidationStatus.ValidOverwrite)
-            {
                 return new Color(1f, 0.72f, 0.15f, 0.9f);
-            }
 
             return new Color(1f, 0.22f, 0.18f, 0.95f);
         }
@@ -642,9 +574,7 @@ namespace SmashFast.LevelEditor
         private void EnsurePreviewRoot()
         {
             if (previewRoot != null)
-            {
                 return;
-            }
 
             GameObject root = new GameObject("SmashFast_BlueprintPreviewRoot");
             root.hideFlags = PreviewHideFlags;
@@ -654,30 +584,22 @@ namespace SmashFast.LevelEditor
         private void EnsurePlacedCapacity(int count)
         {
             while (placedPreviews.Count < count)
-            {
                 placedPreviews.Add(new PreviewInstance());
-            }
         }
 
-        private static void SetPreviewActive(PreviewInstance preview, bool active)
+        private void SetPreviewActive(PreviewInstance preview, bool active)
         {
             if (preview == null || preview.instance == null)
-            {
                 return;
-            }
 
             if (preview.instance.activeSelf != active)
-            {
                 preview.instance.SetActive(active);
-            }
         }
 
         private void DestroyAllPreviews()
         {
             for (int i = 0; i < placedPreviews.Count; i++)
-            {
                 DestroyPreviewInstance(placedPreviews[i]);
-            }
 
             placedPreviews.Clear();
             DestroyPreviewInstance(hoverPreview);
@@ -693,12 +615,10 @@ namespace SmashFast.LevelEditor
             prefabIsCompound.Clear();
         }
 
-        private static void DestroyPreviewInstance(PreviewInstance preview)
+        private void DestroyPreviewInstance(PreviewInstance preview)
         {
             if (preview == null || preview.instance == null)
-            {
                 return;
-            }
 
             Object.DestroyImmediate(preview.instance);
             preview.instance = null;

@@ -61,16 +61,12 @@ namespace SmashFast.LevelEditor
             string meshAssetPath = BakedMeshFolder + "/" + assetName + ".asset";
             string prefabPath = BakedMeshFolder + "/" + assetName + ".prefab";
             if (request.ReplaceExistingAssets)
-            {
                 AssetDatabase.DeleteAsset(meshAssetPath);
-            }
 
             Mesh firstMesh = pieces[0].Mesh;
             AssetDatabase.CreateAsset(firstMesh, meshAssetPath);
             for (int i = 1; i < pieces.Length; i++)
-            {
                 AssetDatabase.AddObjectToAsset(pieces[i].Mesh, firstMesh);
-            }
 
             AssetDatabase.SaveAssets();
 
@@ -79,36 +75,28 @@ namespace SmashFast.LevelEditor
 
             GameObject root = new GameObject(controller.gameObject.name + "_Fractured");
             if (request.RegisterUndo)
-            {
                 Undo.RegisterCreatedObjectUndo(root, "Bake Fracture Hierarchy");
-            }
 
             root.transform.SetParent(controller.transform.parent, false);
             root.transform.position = controller.transform.position;
             root.transform.rotation = controller.transform.rotation;
             root.transform.localScale = controller.transform.localScale;
             if (request.PieceLayer >= 0)
-            {
                 root.layer = request.PieceLayer;
-            }
 
             for (int i = 0; i < pieces.Length; i++)
             {
                 FracturedPiece piece = pieces[i];
                 GameObject pieceObject = new GameObject("Cell_" + piece.SeedIndex.ToString());
                 if (request.RegisterUndo)
-                {
                     Undo.RegisterCreatedObjectUndo(pieceObject, "Bake Fracture Piece");
-                }
 
                 pieceObject.transform.SetParent(root.transform, false);
                 pieceObject.transform.localPosition = piece.LocalCentroid;
                 pieceObject.transform.localRotation = Quaternion.identity;
                 pieceObject.transform.localScale = Vector3.one;
                 if (request.PieceLayer >= 0)
-                {
                     pieceObject.layer = request.PieceLayer;
-                }
 
                 MeshFilter pieceFilter = pieceObject.AddComponent<MeshFilter>();
                 pieceFilter.sharedMesh = piece.Mesh;
@@ -120,9 +108,7 @@ namespace SmashFast.LevelEditor
                 pieceCollider.sharedMesh = piece.Mesh;
                 pieceCollider.convex = controller.ConvexColliders;
                 if (controller.PhysicMaterial != null)
-                {
                     pieceCollider.sharedMaterial = controller.PhysicMaterial;
-                }
 
                 Rigidbody body = pieceObject.AddComponent<Rigidbody>();
                 body.mass = masses[i];
@@ -144,9 +130,7 @@ namespace SmashFast.LevelEditor
         private void EnsureFolderExists(string folderPath)
         {
             if (AssetDatabase.IsValidFolder(folderPath))
-            {
                 return;
-            }
 
             string[] parts = folderPath.Split('/');
             string current = parts[0];
@@ -154,9 +138,7 @@ namespace SmashFast.LevelEditor
             {
                 string next = current + "/" + parts[i];
                 if (!AssetDatabase.IsValidFolder(next))
-                {
                     AssetDatabase.CreateFolder(current, parts[i]);
-                }
 
                 current = next;
             }

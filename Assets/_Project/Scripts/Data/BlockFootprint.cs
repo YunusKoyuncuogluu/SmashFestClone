@@ -15,10 +15,22 @@ namespace SmashFast.Data
         public Vector3Int GetEffectiveSize(Vector3Int sizeInCells, Vector3 rotationEuler)
         {
             Vector3Int size = ClampSize(sizeInCells);
-            int yaw = Mathf.RoundToInt(Mathf.Repeat(rotationEuler.y, 360f));
-            if (yaw >= 360)
+            int roll = SnapRightAngle(rotationEuler.z);
+            int pitch = SnapRightAngle(rotationEuler.x);
+            int yaw = SnapRightAngle(rotationEuler.y);
+
+            if (roll == 90 || roll == 270)
             {
-                yaw = 0;
+                int width = size.x;
+                size.x = size.y;
+                size.y = width;
+            }
+
+            if (pitch == 90 || pitch == 270)
+            {
+                int height = size.y;
+                size.y = size.z;
+                size.z = height;
             }
 
             if (yaw == 90 || yaw == 270)
@@ -29,6 +41,62 @@ namespace SmashFast.Data
             }
 
             return size;
+        }
+
+        public Vector3 ResolveLengthAxisEuler(Vector3Int sizeInCells, int axis)
+        {
+            Vector3Int size = ClampSize(sizeInCells);
+            int lengthAxis = 0;
+            if (size.y >= size.x && size.y >= size.z)
+            {
+                lengthAxis = 1;
+            }
+            else if (size.z >= size.x && size.z >= size.y)
+            {
+                lengthAxis = 2;
+            }
+
+            if (axis < 0)
+            {
+                axis = 0;
+            }
+
+            if (axis > 2)
+            {
+                axis = 2;
+            }
+
+            if (lengthAxis == axis)
+            {
+                return Vector3.zero;
+            }
+
+            if (lengthAxis == 0 && axis == 1)
+            {
+                return new Vector3(0f, 0f, -90f);
+            }
+
+            if (lengthAxis == 0 && axis == 2)
+            {
+                return new Vector3(0f, 90f, 0f);
+            }
+
+            if (lengthAxis == 1 && axis == 0)
+            {
+                return new Vector3(0f, 0f, 90f);
+            }
+
+            if (lengthAxis == 1 && axis == 2)
+            {
+                return new Vector3(90f, 0f, 0f);
+            }
+
+            if (lengthAxis == 2 && axis == 0)
+            {
+                return new Vector3(0f, -90f, 0f);
+            }
+
+            return new Vector3(-90f, 0f, 0f);
         }
 
         public bool ContainsCell(Vector3Int anchor, Vector3Int effectiveSize, Vector3Int cell)
@@ -83,6 +151,17 @@ namespace SmashFast.Data
             }
 
             return true;
+        }
+
+        private int SnapRightAngle(float degrees)
+        {
+            int angle = Mathf.RoundToInt(Mathf.Repeat(degrees, 360f));
+            if (angle >= 360)
+            {
+                angle = 0;
+            }
+
+            return angle;
         }
     }
 }

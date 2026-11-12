@@ -24,14 +24,19 @@ namespace SmashFast.Level
             public BlockDefinition jar;
             public BlockDefinition plank;
             public BlockDefinition ornament;
+            public BlockDefinition pillar;
             public bool hasPlank;
+            public bool hasPillar;
             public bool hasStone;
             public bool hasGlass;
             public bool hasOrnament;
+            public bool stoneColumns;
+            public int woodFamily;
+            public int plankFamily;
 
             public BlockDefinition Column(bool allowStone)
             {
-                if (allowStone && hasStone)
+                if (allowStone && hasStone && stoneColumns)
                 {
                     return stone;
                 }
@@ -50,11 +55,15 @@ namespace SmashFast.Level
             }
         }
 
+        private const int StoneColumnChance = 55;
+
         private readonly BlockFootprint footprint = new BlockFootprint();
         private readonly float[] yawSteps = new float[] { -45f, -30f, 0f, 30f, 45f };
         private readonly int[] moduleOrder = new int[4];
         private readonly List<Vector3Int> anchorBuffer = new List<Vector3Int>(64);
+        private readonly List<int> familyBuffer = new List<int>(8);
         private System.Random random = new System.Random(1);
+        private System.Random paletteRandom = new System.Random(1);
         private LevelData level;
         private BlockCatalogSO catalog;
         private BlockSet blocks;
@@ -104,9 +113,7 @@ namespace SmashFast.Level
                 return null;
             }
 
-            LevelData runtimeLevel = ScriptableObject.CreateInstance<LevelData>();
-            runtimeLevel.name = "RuntimeLevel";
-            runtimeLevel.hideFlags = HideFlags.HideAndDontSave;
+            LevelData runtimeLevel = new LevelData();
             if (gridSource != null)
             {
                 runtimeLevel.GridDimensions = gridSource.GridDimensions;
@@ -130,13 +137,15 @@ namespace SmashFast.Level
             catalog = sourceCatalog;
             int index = levelIndex < 1 ? 1 : levelIndex;
             random = new System.Random(index);
+            paletteRandom = new System.Random((index * 7919) + 17);
             preferredLayer = layerZ < 0 ? 0 : layerZ;
             LastAnchorLayer = preferredLayer;
-            if (!TryLoadBlocks())
+            if (!TryLoadBlocks(index))
             {
                 return "Catalog needs a standard block.";
             }
 
+            ApplyGridForLevel(index);
             level.ClearPlacements();
             blockBudget = BudgetFor(index);
             string message;
@@ -149,34 +158,70 @@ namespace SmashFast.Level
                 message = ComposePreset(index, shape);
             }
 
+            if (level.PlacementCount <= 0)
+            {
+                message = ForceMinimalTableLevel(index);
+            }
+
             EnsureStructuralStability();
             ApplyRules(index);
+            if (level.PlacementCount <= 0)
+            {
+                return "Level " + index.ToString() + " failed to place any blocks.";
+            }
+
             return message;
         }
 
-        private bool TryLoadBlocks()
+        private bool TryLoadBlocks(int index)
         {
             blocks = new BlockSet();
+            int woodFamily = PickFamily(BlockMaterialType.Wood, index <= 3);
+            int stoneFamily = PickFamily(BlockMaterialType.Stone, false);
+            int glassFamily = PickFamily(BlockMaterialType.Glass, false);
+            blocks.woodFamily = woodFamily;
+            blocks.plankFamily = PickPlankFamily(index, woodFamily, stoneFamily, glassFamily);
+            blocks.stoneColumns = paletteRandom.Next(0, 100) < StoneColumnChance;
+
             BlockDefinition wood;
-            bool hasWood = TryFindBlock(BlockShapeRole.StandardBlock, true, BlockMaterialType.Wood, out wood);
+            bool hasWood = TryFindUnit(BlockMaterialType.Wood, woodFamily, out wood);
             BlockDefinition stone;
-            blocks.hasStone = TryFindBlock(BlockShapeRole.StandardBlock, true, BlockMaterialType.Stone, out stone);
+            blocks.hasStone = TryFindUnit(BlockMaterialType.Stone, stoneFamily, out stone);
             BlockDefinition glass;
-            blocks.hasGlass = TryFindBlock(BlockShapeRole.StandardBlock, true, BlockMaterialType.Glass, out glass);
+            blocks.hasGlass = TryFindUnit(BlockMaterialType.Glass, glassFamily, out glass);
             BlockDefinition jar;
-            bool hasJar = TryFindBlock(BlockShapeRole.FragileProp, false, BlockMaterialType.Wood, out jar);
+            bool hasJar = TryFindProp(BlockShapeRole.FragileProp, true, BlockMaterialType.CeramicJar, out jar);
+            if (!hasJar)
+            {
+                hasJar = TryFindProp(BlockShapeRole.FragileProp, false, BlockMaterialType.CeramicJar, out jar);
+            }
+
             BlockDefinition plank;
-            blocks.hasPlank = TryFindBlock(BlockShapeRole.HorizontalPlank, false, BlockMaterialType.Wood, out plank);
+            blocks.hasPlank = TryFindBestPlank(3, out plank);
             BlockDefinition ornament;
-            blocks.hasOrnament = TryFindBlock(BlockShapeRole.TopOrnament, false, BlockMaterialType.Wood, out ornament);
-            if (!hasWood && !blocks.hasStone && !blocks.hasGlass)
+            blocks.hasOrnament = TryFindProp(BlockShapeRole.TopOrnament, false, BlockMaterialType.CeramicJar, out ornament);
+            BlockDefinition pillar;
+            blocks.hasPillar = TryFindBestPillar(2, woodFamily, out pillar);
+
+            if (!hasWood && !blocks.hasStone && !blocks.hasGlass && !blocks.hasPillar && !blocks.hasPlank)
             {
                 return false;
             }
 
             if (!hasWood)
             {
-                wood = blocks.hasGlass ? glass : stone;
+                if (blocks.hasPillar)
+                {
+                    wood = pillar;
+                }
+                else if (blocks.hasPlank)
+                {
+                    wood = plank;
+                }
+                else
+                {
+                    wood = blocks.hasGlass ? glass : stone;
+                }
             }
 
             if (!hasJar)
@@ -200,27 +245,473 @@ namespace SmashFast.Level
             blocks.jar = jar;
             blocks.plank = plank;
             blocks.ornament = ornament;
+            blocks.pillar = pillar;
             return true;
+        }
+
+        private void ApplyGridForLevel(int index)
+        {
+            if (index <= 25)
+            {
+                level.GridDimensions = new Vector3Int(8, 8, 3);
+                return;
+            }
+
+            if (index <= 100)
+            {
+                level.GridDimensions = new Vector3Int(10, 10, 4);
+                return;
+            }
+
+            if (index <= 400)
+            {
+                level.GridDimensions = new Vector3Int(12, 12, 5);
+                return;
+            }
+
+            level.GridDimensions = new Vector3Int(16, 14, 6);
+        }
+
+        private string ForceMinimalTableLevel(int index)
+        {
+            BlockDefinition table;
+            if (!TryGetTable(out table))
+            {
+                return "Catalog needs a foundation table.";
+            }
+
+            Vector3Int tableSize = new Vector3Int(3, 1, 2);
+            if (tableSize.x > level.GridDimensions.x)
+            {
+                tableSize.x = Mathf.Max(1, level.GridDimensions.x);
+            }
+
+            if (tableSize.z > level.GridDimensions.z)
+            {
+                tableSize.z = Mathf.Max(1, level.GridDimensions.z);
+            }
+
+            int originX = CenterX(tableSize.x);
+            int originZ = FitZAt(0, tableSize.z);
+            PlaceTable(table, originX, originZ, 0f, tableSize);
+            BuildStructureOnTable(blocks.wood, originX, tableSize, originZ, Mathf.Min(4, level.GridDimensions.y), false);
+            return "Fallback table filled for level " + index.ToString() + ".";
         }
 
         private string ComposeAuto(int index)
         {
-            if (index <= 8)
-            {
-                return ComposeTutorial(index);
-            }
-
             if (index <= 25)
             {
-                return ComposeDiscovery(index);
+                return ComposeEarlyTable(index);
             }
 
-            if (index <= 70)
+            if (index <= 100)
             {
-                return ComposeTactical(index);
+                return random.Next(0, 2) == 0
+                    ? ComposeWideSingleTable(index)
+                    : ComposeTwinSeparateTables(index);
             }
 
-            return ComposeMaster(index);
+            if (index <= 400)
+            {
+                return random.Next(0, 2) == 0
+                    ? ComposeDeepWideTable(index)
+                    : ComposeFrontRearTables(index);
+            }
+
+            return random.Next(0, 2) == 0
+                ? ComposeMegaPlatform(index)
+                : ComposeTripleIslandTables(index);
+        }
+
+        private int HeightCapFor(int index)
+        {
+            int gridY = level != null ? level.GridDimensions.y : 8;
+            int desired;
+            if (index <= 25)
+            {
+                desired = 5;
+            }
+            else if (index <= 100)
+            {
+                desired = 7;
+            }
+            else if (index <= 400)
+            {
+                desired = 10;
+            }
+            else
+            {
+                desired = 12;
+            }
+
+            if (desired > gridY)
+            {
+                return gridY;
+            }
+
+            return desired;
+        }
+
+        private bool TryGetTable(out BlockDefinition table)
+        {
+            if (catalog.TryGetFoundationTable(out table))
+            {
+                return true;
+            }
+
+            return TryFindFoundation(false, out table);
+        }
+
+        private string ComposeEarlyTable(int index)
+        {
+            BlockDefinition table;
+            if (!TryGetTable(out table))
+            {
+                return "Catalog needs a foundation table.";
+            }
+
+            int width = random.Next(0, 2) == 0 ? 3 : 4;
+            Vector3Int tableSize = new Vector3Int(width, 1, 2);
+            int originX = CenterX(tableSize.x);
+            int originZ = FitZAt(0, tableSize.z);
+            PlaceTable(table, originX, originZ, 0f, tableSize);
+            BuildStructureOnTable(blocks.Column(false), originX, tableSize, originZ, HeightCapFor(index), false);
+            return "Early table " + width.ToString() + "x1x2 for level " + index.ToString() + ".";
+        }
+
+        private string ComposeWideSingleTable(int index)
+        {
+            BlockDefinition table;
+            if (!TryGetTable(out table))
+            {
+                return "Catalog needs a foundation table.";
+            }
+
+            int width = Mathf.Min(level.GridDimensions.x, 5 + random.Next(0, 2));
+            int depth = Mathf.Min(level.GridDimensions.z, 2 + random.Next(0, 2));
+            Vector3Int tableSize = new Vector3Int(Mathf.Max(3, width), 1, Mathf.Max(1, depth));
+            if (tableSize.x > level.GridDimensions.x || tableSize.z > level.GridDimensions.z)
+            {
+                return ComposeEarlyTable(index);
+            }
+
+            int originX = CenterX(tableSize.x);
+            int originZ = FitZAt(0, tableSize.z);
+            PlaceTable(table, originX, originZ, 0f, tableSize);
+            BuildStructureOnTable(blocks.Column(true), originX, tableSize, originZ, HeightCapFor(index), false);
+            return "Wide single table for level " + index.ToString() + ".";
+        }
+
+        private string ComposeTwinSeparateTables(int index)
+        {
+            BlockDefinition table;
+            if (!TryGetTable(out table))
+            {
+                return "Catalog needs a foundation table.";
+            }
+
+            Vector3Int tableSize = new Vector3Int(3, 1, 2);
+            int gap = 1;
+            int span = (tableSize.x * 2) + gap;
+            if (span > level.GridDimensions.x)
+            {
+                return ComposeWideSingleTable(index);
+            }
+
+            int startX = CenterX(span);
+            int originZ = FitZAt(0, tableSize.z);
+            bool angled = random.Next(0, 2) == 0;
+            float leftYaw = angled ? -30f : 0f;
+            float rightYaw = angled ? 30f : 0f;
+            int leftX = startX;
+            int rightX = startX + tableSize.x + gap;
+            PlaceTable(table, leftX, originZ, leftYaw, tableSize);
+            PlaceTable(table, rightX, originZ, rightYaw, tableSize);
+            int heightCap = HeightCapFor(index);
+            BlockDefinition column = blocks.Column(index > 25);
+            BuildStructureOnTable(column, leftX, tableSize, originZ, heightCap, false);
+            BuildStructureOnTable(column, rightX, tableSize, originZ, heightCap, false);
+            return "Twin separate tables for level " + index.ToString() + ".";
+        }
+
+        private string ComposeDeepWideTable(int index)
+        {
+            BlockDefinition table;
+            if (!TryGetTable(out table))
+            {
+                return "Catalog needs a foundation table.";
+            }
+
+            int width = Mathf.Min(level.GridDimensions.x, 6 + random.Next(0, 3));
+            int depth = Mathf.Min(level.GridDimensions.z, 3 + random.Next(0, 2));
+            Vector3Int tableSize = new Vector3Int(Mathf.Max(4, width), 1, Mathf.Max(2, depth));
+            if (tableSize.x > level.GridDimensions.x || tableSize.z > level.GridDimensions.z)
+            {
+                return ComposeWideSingleTable(index);
+            }
+
+            int originX = CenterX(tableSize.x);
+            int originZ = FitZAt(0, tableSize.z);
+            PlaceTable(table, originX, originZ, 0f, tableSize);
+            BuildStructureOnTable(blocks.Column(true), originX, tableSize, originZ, HeightCapFor(index), true);
+            return "Deep wide table for level " + index.ToString() + ".";
+        }
+
+        private string ComposeFrontRearTables(int index)
+        {
+            BlockDefinition table;
+            if (!TryGetTable(out table))
+            {
+                return "Catalog needs a foundation table.";
+            }
+
+            Vector3Int frontSize = new Vector3Int(3, 1, 2);
+            int rearWidth = Mathf.Min(7, level.GridDimensions.x);
+            int rearDepth = Mathf.Max(2, Mathf.Min(3, level.GridDimensions.z - frontSize.z));
+            Vector3Int rearSize = new Vector3Int(rearWidth, 1, rearDepth);
+            if (rearSize.x < 3 || rearSize.z < 2 || frontSize.z + rearSize.z > level.GridDimensions.z)
+            {
+                return ComposeDeepWideTable(index);
+            }
+
+            int rearX = CenterX(rearSize.x);
+            int rearZ = FitZAt(frontSize.z + 1, rearSize.z);
+            PlaceTable(table, rearX, rearZ, 0f, rearSize);
+            BuildStructureOnTable(blocks.Column(true), rearX, rearSize, rearZ, HeightCapFor(index), true);
+
+            int gap = 1;
+            int span = (frontSize.x * 2) + gap;
+            int frontZ = FitZAt(0, frontSize.z);
+            if (span <= level.GridDimensions.x)
+            {
+                int startX = CenterX(span);
+                PlaceTable(table, startX, frontZ, -30f, frontSize);
+                PlaceTable(table, startX + frontSize.x + gap, frontZ, 30f, frontSize);
+                int frontHeight = Mathf.Max(4, HeightCapFor(index) - 3);
+                BuildStructureOnTable(blocks.wood, startX, frontSize, frontZ, frontHeight, false);
+                BuildStructureOnTable(
+                    blocks.wood,
+                    startX + frontSize.x + gap,
+                    frontSize,
+                    frontZ,
+                    frontHeight,
+                    false);
+            }
+
+            return "Front-rear tables for level " + index.ToString() + ".";
+        }
+
+        private string ComposeMegaPlatform(int index)
+        {
+            BlockDefinition table;
+            if (!TryGetTable(out table))
+            {
+                return "Catalog needs a foundation table.";
+            }
+
+            int width = Mathf.Min(level.GridDimensions.x, 7 + random.Next(0, 2));
+            int depth = Mathf.Min(level.GridDimensions.z, 4 + random.Next(0, 2));
+            Vector3Int tableSize = new Vector3Int(Mathf.Max(5, width), 1, Mathf.Max(3, depth));
+            if (tableSize.x > level.GridDimensions.x || tableSize.z > level.GridDimensions.z)
+            {
+                return ComposeDeepWideTable(index);
+            }
+
+            int originX = CenterX(tableSize.x);
+            int originZ = FitZAt(0, tableSize.z);
+            PlaceTable(table, originX, originZ, 0f, tableSize);
+            BuildStructureOnTable(blocks.Column(true), originX, tableSize, originZ, HeightCapFor(index), true);
+            return "Mega platform table for level " + index.ToString() + ".";
+        }
+
+        private string ComposeTripleIslandTables(int index)
+        {
+            BlockDefinition table;
+            if (!TryGetTable(out table))
+            {
+                return "Catalog needs a foundation table.";
+            }
+
+            int centerWidth = Mathf.Min(6, level.GridDimensions.x - 8);
+            int centerDepth = Mathf.Min(4, level.GridDimensions.z);
+            if (centerWidth < 4)
+            {
+                return ComposeMegaPlatform(index);
+            }
+
+            Vector3Int centerSize = new Vector3Int(centerWidth, 1, Mathf.Max(2, centerDepth));
+            Vector3Int wingSize = new Vector3Int(3, 1, 2);
+            int gap = 1;
+            int span = wingSize.x + gap + centerSize.x + gap + wingSize.x;
+            if (span > level.GridDimensions.x || centerSize.z > level.GridDimensions.z)
+            {
+                return ComposeMegaPlatform(index);
+            }
+
+            int leftX = CenterX(span);
+            int centerX = leftX + wingSize.x + gap;
+            int rightX = centerX + centerSize.x + gap;
+            int originZ = FitZAt(0, centerSize.z);
+            PlaceTable(table, leftX, originZ, -30f, wingSize);
+            PlaceTable(table, centerX, originZ, 0f, centerSize);
+            PlaceTable(table, rightX, originZ, 30f, wingSize);
+            int height = HeightCapFor(index);
+            BuildStructureOnTable(blocks.wood, leftX, wingSize, originZ, Mathf.Max(4, height - 2), false);
+            BuildStructureOnTable(blocks.Column(true), centerX, centerSize, originZ, height, true);
+            BuildStructureOnTable(blocks.wood, rightX, wingSize, originZ, Mathf.Max(4, height - 2), false);
+            return "Triple island tables for level " + index.ToString() + ".";
+        }
+
+        private void PlaceTable(BlockDefinition table, int originX, int originZ, float yaw, Vector3Int customSize)
+        {
+            Place(table, new Vector3Int(originX, 0, originZ), yaw, customSize);
+        }
+
+        private void BuildStructureOnTable(
+            BlockDefinition column,
+            int originX,
+            Vector3Int tableSize,
+            int originZ,
+            int heightCap,
+            bool tallPeak)
+        {
+            int maxY = heightCap;
+            if (maxY > level.GridDimensions.y)
+            {
+                maxY = level.GridDimensions.y;
+            }
+
+            for (int z = 0; z < tableSize.z; z++)
+            {
+                int layerZ = originZ + z;
+                int y = tableSize.y;
+                bool peak = tallPeak && z == tableSize.z - 1;
+                if (blocks.hasGlass && random.Next(0, 3) != 0)
+                {
+                    y = PlaceWeakBase(blocks.glass, column, originX, y, layerZ, tableSize.x);
+                }
+
+                while (y < maxY - 2 && level.PlacementCount < blockBudget)
+                {
+                    int before = level.PlacementCount;
+                    int postRows = peak ? 3 : 2;
+                    y = PlaceArch(column, PickFillProp(), true, originX, y, layerZ, tableSize.x, postRows);
+                    if (y < maxY - 1)
+                    {
+                        y = PlaceShelf(originX, y, layerZ, tableSize.x, true);
+                    }
+
+                    if (level.PlacementCount == before)
+                    {
+                        break;
+                    }
+                }
+
+                PlaceCrown(blocks.Crown(), originX, y, layerZ, tableSize.x);
+            }
+        }
+
+        private BlockDefinition PickFillProp()
+        {
+            int roll = random.Next(0, 4);
+            if (roll == 0 && blocks.hasGlass)
+            {
+                return blocks.glass;
+            }
+
+            if (roll == 1)
+            {
+                return blocks.jar;
+            }
+
+            if (roll == 2 && blocks.hasOrnament)
+            {
+                return blocks.ornament;
+            }
+
+            return blocks.wood;
+        }
+
+        private void PlaceDepthBridge(int originX, int y, int fromZ, int width)
+        {
+            if (fromZ < 0 || fromZ + 1 >= level.GridDimensions.z)
+            {
+                return;
+            }
+
+            BlockDefinition beam;
+            if (TryFindBestDepthBeam(Mathf.Clamp(width, 2, 5), out beam))
+            {
+                Place(beam, new Vector3Int(originX + ((width - footprint.ClampSize(beam.sizeInCells).z) / 2), y, fromZ));
+                return;
+            }
+
+            PlaceRow(blocks.wood, originX, y, fromZ, width);
+            PlaceRow(blocks.wood, originX, y, fromZ + 1, width);
+        }
+
+        private bool TryFindBestDepthBeam(int preferredLength, out BlockDefinition definition)
+        {
+            definition = default;
+            bool found = false;
+            int bestDelta = int.MaxValue;
+            int count = catalog.BlockCount;
+            for (int i = 0; i < count; i++)
+            {
+                BlockDefinition candidate;
+                if (!catalog.TryGetBlockByIndex(i, out candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.prefab == null)
+                {
+                    continue;
+                }
+
+                Vector3Int size = footprint.ClampSize(candidate.sizeInCells);
+                if (size.z < 2 || size.x != 1 || size.y != 1)
+                {
+                    continue;
+                }
+
+                int delta = Mathf.Abs(size.z - preferredLength);
+                if (found && delta >= bestDelta)
+                {
+                    continue;
+                }
+
+                bestDelta = delta;
+                definition = candidate;
+                found = true;
+            }
+
+            return found;
+        }
+
+        private int FitZAt(int desiredZ, int depth)
+        {
+            int span = depth < 1 ? 1 : depth;
+            int maxAnchor = level.GridDimensions.z - span;
+            if (maxAnchor < 0)
+            {
+                maxAnchor = 0;
+            }
+
+            int layer = desiredZ;
+            if (layer < 0)
+            {
+                layer = 0;
+            }
+
+            if (layer > maxAnchor)
+            {
+                layer = maxAnchor;
+            }
+
+            LastAnchorLayer = layer;
+            return layer;
         }
 
         private string ComposeTutorial(int index)
@@ -235,13 +726,7 @@ namespace SmashFast.Level
 
             int y = size.y;
             int postRows = index >= 6 ? 2 : 1;
-            for (int row = 0; row < postRows; row++)
-            {
-                PlaceSupports(blocks.wood, blocks.wood, false, false, originX, y, originZ, size.x);
-                y++;
-            }
-
-            y = PlaceBridge(blocks.wood, false, originX, y, originZ, size.x);
+            y = PlaceArch(blocks.Column(false), blocks.jar, true, originX, y, originZ, size.x, postRows);
             PlaceRow(blocks.jar, originX, y, originZ, size.x);
             return "Tutorial arch built for level " + index.ToString() + ".";
         }
@@ -626,30 +1111,132 @@ namespace SmashFast.Level
             int originZ,
             int width)
         {
+            return PlaceArch(column, opening, fillOpening, originX, y, originZ, width, 2);
+        }
+
+        private int PlaceArch(
+            BlockDefinition column,
+            BlockDefinition opening,
+            bool fillOpening,
+            int originX,
+            int y,
+            int originZ,
+            int width,
+            int preferredHeight)
+        {
             if (y >= level.GridDimensions.y)
             {
                 return y;
             }
 
-            PlaceSupports(column, opening, fillOpening, blocks.hasPlank, originX, y, originZ, width);
-            return PlaceBridge(column, blocks.hasPlank, originX, y + 1, originZ, width);
+            int postHeight = PlacePillarPosts(column, opening, fillOpening, originX, y, originZ, width, preferredHeight);
+            return PlaceBridge(column, blocks.hasPlank, originX, y + postHeight, originZ, width);
         }
 
         private int PlaceTower(BlockDefinition column, int originX, int y, int originZ, int width)
         {
-            int next = y;
-            for (int row = 0; row < 2; row++)
-            {
-                if (next >= level.GridDimensions.y)
-                {
-                    return next;
-                }
+            int postHeight = PlacePillarPosts(column, PickFillProp(), true, originX, y, originZ, width, 2);
+            return PlaceBridge(blocks.wood, blocks.hasPlank, originX, y + postHeight, originZ, width);
+        }
 
-                PlaceSupports(column, blocks.wood, false, blocks.hasPlank, originX, next, originZ, width);
-                next++;
+        private int PlacePillarPosts(
+            BlockDefinition column,
+            BlockDefinition opening,
+            bool fillOpening,
+            int originX,
+            int y,
+            int originZ,
+            int width,
+            int preferredHeight)
+        {
+            BlockDefinition pillar = column;
+            int height = 1;
+            BlockDefinition foundPillar;
+            if (blocks.hasPillar && TryFindBestPillar(preferredHeight, column.familyKey, out foundPillar))
+            {
+                pillar = foundPillar;
+                height = footprint.ClampSize(foundPillar.sizeInCells).y;
+            }
+            else if (preferredHeight > 1)
+            {
+                height = preferredHeight;
             }
 
-            return PlaceBridge(blocks.wood, blocks.hasPlank, originX, next, originZ, width);
+            if (y + height > level.GridDimensions.y)
+            {
+                height = level.GridDimensions.y - y;
+            }
+
+            if (height < 1)
+            {
+                return 0;
+            }
+
+            int plankWidth = 0;
+            int margin = 0;
+            bool spanned = blocks.hasPlank && TryPlankSpan(width, out plankWidth, out margin);
+            bool useSinglePillar = footprint.ClampSize(pillar.sizeInCells).y == height && height > 1;
+            if (useSinglePillar)
+            {
+                Place(pillar, new Vector3Int(originX, y, originZ));
+                if (width > 1)
+                {
+                    Place(pillar, new Vector3Int(originX + width - 1, y, originZ));
+                }
+
+                if (fillOpening && width > 2)
+                {
+                    BlockDefinition tallOpening;
+                    if (TryFindTallProp(opening, height, out tallOpening) && paletteRandom.Next(0, 2) == 0)
+                    {
+                        PlaceInteriorOpenings(tallOpening, spanned, plankWidth, margin, originX, y, originZ, width);
+                        return height;
+                    }
+
+                    for (int row = 0; row < height; row++)
+                    {
+                        PlaceInteriorOpenings(opening, spanned, plankWidth, margin, originX, y + row, originZ, width);
+                    }
+                }
+
+                return height;
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                PlaceSupports(column, opening, fillOpening, blocks.hasPlank, originX, y + row, originZ, width);
+            }
+
+            return height;
+        }
+
+        private void PlaceInteriorOpenings(
+            BlockDefinition opening,
+            bool spanned,
+            int plankWidth,
+            int margin,
+            int originX,
+            int y,
+            int originZ,
+            int width)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                bool plankEnd = spanned && (x == margin || x == margin + plankWidth - 1);
+                bool underPlank = spanned && x >= margin && x < margin + plankWidth;
+                bool hole = underPlank && !plankEnd;
+                if (!spanned)
+                {
+                    hole = x > 0 && x < width - 1;
+                }
+
+                if (!hole)
+                {
+                    continue;
+                }
+
+                Place(opening, new Vector3Int(originX + x, y, originZ));
+            }
         }
 
         private int PlaceWeakBase(BlockDefinition glass, BlockDefinition heavy, int originX, int y, int originZ, int width)
@@ -683,21 +1270,10 @@ namespace SmashFast.Level
         {
             bool glassWindow = blocks.hasGlass && random.Next(0, 2) == 0;
             bool span = blocks.hasPlank;
-            bool fill = glassWindow || !span;
-            BlockDefinition filler = glassWindow ? blocks.glass : column;
-            int next = y;
-            for (int row = 0; row < 2; row++)
-            {
-                if (next >= level.GridDimensions.y)
-                {
-                    return next;
-                }
-
-                PlaceSupports(column, filler, fill, span, originX, next, originZ, width);
-                next++;
-            }
-
-            int roof = PlaceBridge(column, span, originX, next, originZ, width);
+            BlockDefinition filler = glassWindow ? blocks.glass : PickFillProp();
+            bool fill = true;
+            int postHeight = PlacePillarPosts(column, filler, fill, originX, y, originZ, width, 2);
+            int roof = PlaceBridge(column, span, originX, y + postHeight, originZ, width);
             return PlaceCrown(blocks.Crown(), originX, roof, originZ, width);
         }
 
@@ -816,20 +1392,379 @@ namespace SmashFast.Level
         {
             plankWidth = 0;
             margin = 0;
-            if (!blocks.hasPlank)
+            BlockDefinition plank;
+            if (!TryFindBestPlank(width, out plank))
             {
                 return false;
             }
 
-            int candidate = footprint.ClampSize(blocks.plank.sizeInCells).x;
-            if (candidate <= 1 || candidate > width)
-            {
-                return false;
-            }
-
-            plankWidth = candidate;
-            margin = (width - candidate) / 2;
+            blocks.plank = plank;
+            blocks.hasPlank = true;
+            plankWidth = footprint.ClampSize(plank.sizeInCells).x;
+            margin = (width - plankWidth) / 2;
             return true;
+        }
+
+        private bool TryFindBestPlank(int width, out BlockDefinition definition)
+        {
+            if (blocks.plankFamily != 0 && TryFindBestPlank(width, blocks.plankFamily, out definition))
+            {
+                return true;
+            }
+
+            if (blocks.woodFamily != 0 && TryFindBestPlank(width, blocks.woodFamily, out definition))
+            {
+                return true;
+            }
+
+            return TryFindBestPlank(width, 0, out definition);
+        }
+
+        private bool TryFindBestPlank(int width, int familyKey, out BlockDefinition definition)
+        {
+            definition = default;
+            bool found = false;
+            int bestWidth = 0;
+            int count = catalog.BlockCount;
+            for (int i = 0; i < count; i++)
+            {
+                BlockDefinition candidate;
+                if (!catalog.TryGetBlockByIndex(i, out candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.shapeRole != BlockShapeRole.HorizontalPlank || candidate.prefab == null)
+                {
+                    continue;
+                }
+
+                if (familyKey != 0 && candidate.familyKey != familyKey)
+                {
+                    continue;
+                }
+
+                Vector3Int size = footprint.ClampSize(candidate.sizeInCells);
+                if (size.y != 1 || size.z != 1 || size.x <= 1 || size.x > width)
+                {
+                    continue;
+                }
+
+                if (found && size.x <= bestWidth)
+                {
+                    continue;
+                }
+
+                bestWidth = size.x;
+                definition = candidate;
+                found = true;
+            }
+
+            return found;
+        }
+
+        private bool TryFindBestPillar(int preferredHeight, int familyKey, out BlockDefinition definition)
+        {
+            if (familyKey != 0 && TryFindPillarInFamily(preferredHeight, familyKey, out definition))
+            {
+                return true;
+            }
+
+            if (blocks.woodFamily != 0 && TryFindPillarInFamily(preferredHeight, blocks.woodFamily, out definition))
+            {
+                return true;
+            }
+
+            return TryFindPillarInFamily(preferredHeight, 0, out definition);
+        }
+
+        private bool TryFindPillarInFamily(int preferredHeight, int familyKey, out BlockDefinition definition)
+        {
+            definition = default;
+            bool found = false;
+            int bestHeight = 0;
+            int count = catalog.BlockCount;
+            for (int i = 0; i < count; i++)
+            {
+                BlockDefinition candidate;
+                if (!catalog.TryGetBlockByIndex(i, out candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.shapeRole != BlockShapeRole.VerticalPillar || candidate.prefab == null)
+                {
+                    continue;
+                }
+
+                if (familyKey != 0 && candidate.familyKey != familyKey)
+                {
+                    continue;
+                }
+
+                Vector3Int size = footprint.ClampSize(candidate.sizeInCells);
+                if (size.x != 1 || size.z != 1 || size.y <= 1 || size.y > preferredHeight)
+                {
+                    continue;
+                }
+
+                if (found && size.y <= bestHeight)
+                {
+                    continue;
+                }
+
+                bestHeight = size.y;
+                definition = candidate;
+                found = true;
+            }
+
+            return found;
+        }
+
+        private int PickFamily(BlockMaterialType material, bool preferFirst)
+        {
+            familyBuffer.Clear();
+            int count = catalog.BlockCount;
+            for (int i = 0; i < count; i++)
+            {
+                BlockDefinition candidate;
+                if (!catalog.TryGetBlockByIndex(i, out candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.familyKey == 0 || candidate.materialType != material || candidate.prefab == null)
+                {
+                    continue;
+                }
+
+                if (candidate.shapeRole != BlockShapeRole.StandardBlock)
+                {
+                    continue;
+                }
+
+                if (!familyBuffer.Contains(candidate.familyKey))
+                {
+                    familyBuffer.Add(candidate.familyKey);
+                }
+            }
+
+            if (familyBuffer.Count == 0)
+            {
+                return 0;
+            }
+
+            int pick = paletteRandom.Next(0, familyBuffer.Count);
+            return preferFirst ? familyBuffer[0] : familyBuffer[pick];
+        }
+
+        private int PickPlankFamily(int index, int woodFamily, int stoneFamily, int glassFamily)
+        {
+            int roll = paletteRandom.Next(0, 10);
+            if (index <= 8)
+            {
+                return woodFamily;
+            }
+
+            if (index <= 25)
+            {
+                return roll >= 8 && glassFamily != 0 ? glassFamily : woodFamily;
+            }
+
+            if (roll >= 8 && glassFamily != 0)
+            {
+                return glassFamily;
+            }
+
+            if (roll >= 5 && stoneFamily != 0)
+            {
+                return stoneFamily;
+            }
+
+            return woodFamily;
+        }
+
+        private bool TryFindUnit(BlockMaterialType material, int familyKey, out BlockDefinition definition)
+        {
+            if (familyKey != 0 && TryFindUnitInFamily(material, familyKey, out definition))
+            {
+                return true;
+            }
+
+            return TryFindUnitInFamily(material, 0, out definition);
+        }
+
+        private bool TryFindUnitInFamily(BlockMaterialType material, int familyKey, out BlockDefinition definition)
+        {
+            definition = default;
+            bool found = false;
+            int count = catalog.BlockCount;
+            for (int i = 0; i < count; i++)
+            {
+                BlockDefinition candidate;
+                if (!catalog.TryGetBlockByIndex(i, out candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.materialType != material || candidate.shapeRole != BlockShapeRole.StandardBlock)
+                {
+                    continue;
+                }
+
+                if (candidate.prefab == null || !candidate.canSupportBlocksAbove)
+                {
+                    continue;
+                }
+
+                if (familyKey != 0 && candidate.familyKey != familyKey)
+                {
+                    continue;
+                }
+
+                if (footprint.ClampSize(candidate.sizeInCells) != Vector3Int.one)
+                {
+                    continue;
+                }
+
+                if (candidate.meshEuler == Vector3.zero)
+                {
+                    definition = candidate;
+                    return true;
+                }
+
+                if (!found)
+                {
+                    definition = candidate;
+                    found = true;
+                }
+            }
+
+            return found;
+        }
+
+        private bool TryFindProp(BlockShapeRole role, bool matchMaterial, BlockMaterialType material, out BlockDefinition definition)
+        {
+            definition = default;
+            int matchCount = 0;
+            int uprightCount = 0;
+            int count = catalog.BlockCount;
+            for (int i = 0; i < count; i++)
+            {
+                BlockDefinition candidate;
+                if (!catalog.TryGetBlockByIndex(i, out candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.shapeRole != role || candidate.prefab == null)
+                {
+                    continue;
+                }
+
+                if (matchMaterial && candidate.materialType != material)
+                {
+                    continue;
+                }
+
+                if (footprint.ClampSize(candidate.sizeInCells) != Vector3Int.one)
+                {
+                    continue;
+                }
+
+                matchCount++;
+                if (candidate.meshEuler == Vector3.zero)
+                {
+                    uprightCount++;
+                }
+            }
+
+            if (matchCount == 0)
+            {
+                return false;
+            }
+
+            int targetIndex = random.Next(0, uprightCount > 0 ? uprightCount : matchCount);
+            int seen = 0;
+            for (int i = 0; i < count; i++)
+            {
+                BlockDefinition candidate;
+                if (!catalog.TryGetBlockByIndex(i, out candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.shapeRole != role || candidate.prefab == null)
+                {
+                    continue;
+                }
+
+                if (matchMaterial && candidate.materialType != material)
+                {
+                    continue;
+                }
+
+                if (footprint.ClampSize(candidate.sizeInCells) != Vector3Int.one)
+                {
+                    continue;
+                }
+
+                bool uprightOnly = uprightCount > 0;
+                if (uprightOnly && candidate.meshEuler != Vector3.zero)
+                {
+                    continue;
+                }
+
+                if (seen == targetIndex)
+                {
+                    definition = candidate;
+                    return true;
+                }
+
+                seen++;
+            }
+
+            return false;
+        }
+
+        private bool TryFindTallProp(BlockDefinition unitProp, int height, out BlockDefinition definition)
+        {
+            definition = default;
+            if (height < 2 || unitProp.familyKey == 0 || unitProp.shapeRole != BlockShapeRole.FragileProp)
+            {
+                return false;
+            }
+
+            Vector3Int wanted = new Vector3Int(1, height, 1);
+            int count = catalog.BlockCount;
+            for (int i = 0; i < count; i++)
+            {
+                BlockDefinition candidate;
+                if (!catalog.TryGetBlockByIndex(i, out candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.familyKey != unitProp.familyKey || candidate.shapeRole != BlockShapeRole.FragileProp)
+                {
+                    continue;
+                }
+
+                if (candidate.prefab == null || candidate.meshEuler != Vector3.zero)
+                {
+                    continue;
+                }
+
+                if (footprint.ClampSize(candidate.sizeInCells) != wanted)
+                {
+                    continue;
+                }
+
+                definition = candidate;
+                return true;
+            }
+
+            return false;
         }
 
         private void PlaceRow(BlockDefinition block, int originX, int y, int originZ, int width)
@@ -884,22 +1819,22 @@ namespace SmashFast.Level
 
         private int BudgetFor(int index)
         {
-            if (index <= 8)
+            if (index <= 20)
             {
-                return 9;
+                return 18;
             }
 
-            if (index <= 25)
+            if (index <= 80)
             {
-                return 22;
+                return 40;
             }
 
-            if (index <= 70)
+            if (index <= 300)
             {
-                return 34;
+                return 75;
             }
 
-            return 45;
+            return 120;
         }
 
         private void ApplyRules(int levelIndex)
@@ -1012,13 +1947,21 @@ namespace SmashFast.Level
 
         private void Place(BlockDefinition definition, Vector3Int anchor, float yaw = 0f)
         {
+            Place(definition, anchor, yaw, Vector3Int.zero);
+        }
+
+        private void Place(BlockDefinition definition, Vector3Int anchor, float yaw, Vector3Int customSize)
+        {
             if (blockBudget > 0 && level.PlacementCount >= blockBudget)
             {
                 return;
             }
 
             Vector3 euler = new Vector3(0f, yaw, 0f);
-            Vector3Int size = footprint.GetEffectiveSize(definition.sizeInCells, euler);
+            Vector3Int sizeInCells = customSize.x > 0 && customSize.y > 0 && customSize.z > 0
+                ? footprint.ClampSize(customSize)
+                : footprint.ClampSize(definition.sizeInCells);
+            Vector3Int size = footprint.GetEffectiveSize(sizeInCells, euler);
             if (anchor.x < 0 || anchor.y < 0 || anchor.z < 0)
             {
                 return;
@@ -1045,6 +1988,11 @@ namespace SmashFast.Level
             placement.blockId = definition.blockId;
             placement.gridPosition = anchor;
             placement.rotationEuler = euler;
+            if (customSize.x > 0 && customSize.y > 0 && customSize.z > 0)
+            {
+                placement.customSize = footprint.ClampSize(customSize);
+            }
+
             level.PlaceBlock(placement, size, catalog);
         }
 
@@ -1098,7 +2046,7 @@ namespace SmashFast.Level
                 return;
             }
 
-            Vector3Int size = footprint.GetEffectiveSize(definition.sizeInCells, placement.rotationEuler);
+            Vector3Int size = level.GetEffectiveSize(placement, catalog);
             if (HasValidSupport(level, catalog, placement.gridPosition, size))
             {
                 return;
@@ -1163,7 +2111,7 @@ namespace SmashFast.Level
                 return;
             }
 
-            Vector3Int size = footprint.GetEffectiveSize(definition.sizeInCells, table.rotationEuler);
+            Vector3Int size = level.GetEffectiveSize(table, catalog);
             int top = table.gridPosition.y + size.y;
             int height = level.GridDimensions.y;
             for (int y = top; y < height; y++)
@@ -1292,7 +2240,7 @@ namespace SmashFast.Level
                 return false;
             }
 
-            Vector3Int size = footprint.GetEffectiveSize(definition.sizeInCells, placement.rotationEuler);
+            Vector3Int size = level.GetEffectiveSize(placement, catalog);
             if (size.x != 1 || size.y != 1 || size.z != 1)
             {
                 return false;
@@ -1356,6 +2304,11 @@ namespace SmashFast.Level
             }
 
             if (definition.shapeRole == BlockShapeRole.StandardBlock)
+            {
+                return true;
+            }
+
+            if (definition.shapeRole == BlockShapeRole.VerticalPillar)
             {
                 return true;
             }
@@ -1424,33 +2377,5 @@ namespace SmashFast.Level
             return found;
         }
 
-        private bool TryFindBlock(BlockShapeRole role, bool matchMaterial, BlockMaterialType material, out BlockDefinition definition)
-        {
-            int count = catalog.BlockCount;
-            for (int i = 0; i < count; i++)
-            {
-                BlockDefinition candidate;
-                if (!catalog.TryGetBlockByIndex(i, out candidate))
-                {
-                    continue;
-                }
-
-                if (candidate.shapeRole != role)
-                {
-                    continue;
-                }
-
-                if (matchMaterial && candidate.materialType != material)
-                {
-                    continue;
-                }
-
-                definition = candidate;
-                return true;
-            }
-
-            definition = default;
-            return false;
-        }
     }
 }

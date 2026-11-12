@@ -13,6 +13,6 @@ namespace SmashFast.Level
 
     public interface IDestructibleTracker
     {
-        void NotifyDestructibleDespawned();
+        void UnregisterTarget();
     }
 }

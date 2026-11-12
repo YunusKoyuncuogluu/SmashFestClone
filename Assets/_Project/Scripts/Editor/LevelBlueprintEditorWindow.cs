@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using SmashFast.Data;
 using UnityEditor;
 using UnityEngine;
@@ -7,29 +8,100 @@ namespace SmashFast.LevelEditor
 {
     public class LevelBlueprintEditorWindow : EditorWindow
     {
-        private const float CellWidth = 96f;
-        private const float CellHeight = 64f;
-        private const float PaletteCardWidth = 118f;
-        private const float PaletteCardHeight = 132f;
-        private const string LevelPrefKey = "SmashFast.Blueprint.Level";
+        private const float PalettePreviewSize = 34f;
+        private const float FamilyChipHeight = 20f;
+        private const float CardDragThresholdSqr = 16f;
+        private const int StandaloneCardKeyOffset = 100000;
+        private const int DefaultTableWidth = 4;
+        private const int DefaultTableDepth = 2;
+        private const float MatrixMinHeight = 220f;
+        private const float StatusBarHeight = 18f;
+        private const float PaletteHeight = 245f;
+        private const float PaletteVerticalSlack = 30f;
+        private const float LayoutSlack = 14f;
+        private const float WindowPadding = 16f;
+        private const float MatrixRowLabelWidth = 28f;
+        private const float MatrixCellGap = 2f;
+        private const float MatrixHorizontalOverhead = 38f;
+        private const float MatrixVerticalOverhead = 52f;
+        private const float MinMatrixCellSize = 6f;
+        private const float NarrowPaletteWidth = 560f;
+        private const float SizeStripHeight = 58f;
+        private const float StripPadding = 6f;
+        private const float StripColumnGap = 12f;
+        private const float StripLabelWidth = 30f;
+        private const float StripChipGap = 2f;
+        private const float StripRowGap = 4f;
+        private const float TableStripLabelWidth = 68f;
+        private const float GridScrollbarWidth = 17f;
+        private const float PaletteCardMinWidth = 145f;
+        private const float PaletteCardGap = 4f;
+        private const float PaletteCardHeight = 42f;        private const string LevelPrefKey = "SmashFast.Blueprint.LevelIndex";
         private const string CatalogPrefKey = "SmashFast.Blueprint.Catalog";
         private const int MaxOverwriteHighlights = 16;
         private const int EditorFrameRate = 120;
 
-        private LevelData activeLevel;
+        [SerializeField] private LevelData currentLevel;
         private BlockCatalogSO activeCatalog;
+
+        private LevelData activeLevel
+        {
+            get
+            {
+                return currentLevel;
+            }
+            set
+            {
+                currentLevel = value;
+            }
+        }
+        private LevelDatabaseSO levelDatabase;
+        private JsonLevelRepository levelRepository;
+        private readonly JsonLevelDatabaseIO jsonIo = new JsonLevelDatabaseIO();
+        private int editingLevelIndex = 1;
+        private int jumpLevelField = 1;
+        private bool jsonDirty;
+        private int selectedPresetIndex;
+        private int paletteCategoryIndex;
+        private string paletteSearch = string.Empty;
+        private readonly string[] paletteCategoryLabels =
+        {
+            "All",
+            "Tables",
+            "Wood",
+            "Can",
+            "Ice",
+            "Stone",
+            "Jars"
+        };
+        private readonly string[] presetLabels =
+        {
+            "Select Preset...",
+            "Straight Apartment",
+            "45 Degree Angled Tower",
+            "Glass Weak-Point",
+            "Shelf & Jars",
+            "V-Angled Twin Tables"
+        };
         private int selectedZLayer;
         private int brushBlockId;
         private bool hasBrush;
         private Vector3 brushRotationEuler;
-        private bool showGridSettings;
+        private int brushTableWidth = 4;
+        private int brushTableDepth = 2;
+        private bool showDatabaseSettings;
+        private float matrixCellWidth = 24f;
+        private float matrixCellHeight = 24f;
         private bool hasSelectedPlacement;
         private BlockPlacementData selectedPlacement;
         private readonly BlockFootprint blockFootprint = new BlockFootprint();
         private LevelArchitecturePresetBuilder presetBuilder;
         private readonly LevelEditorDragPayload dragPayload = new LevelEditorDragPayload();
-        private Vector2 matrixScroll;
         private Vector2 paletteScroll;
+        private Vector2 paletteCardPressPosition;
+        private int selectedCardKey = -1;
+        private float topAreaHeight = 230f;
+        private readonly List<int> visibleCardKeys = new List<int>(128);
         private bool isPainting;
         private bool isErasing;
         private Vector3Int lastEditedCell;
@@ -111,20 +183,16 @@ namespace SmashFast.LevelEditor
 
         public void SetActiveLevel(LevelData levelData)
         {
-            if (activeLevel == levelData)
+            EnsureRepository();
+            if (levelData == null)
             {
-                ClampActiveLayer();
-                SyncPreview();
                 return;
             }
 
-            activeLevel = levelData;
-            hasLastEditedCell = false;
-            ClampActiveLayer();
-            SaveAssetPrefs();
-            SyncPreview();
-            Repaint();
-            SceneView.RepaintAll();
+            levelRepository.CaptureLevel(levelData);
+            PersistJson(false);
+            int index = levelData.LevelIndex < 1 ? 1 : levelData.LevelIndex;
+            NavigateToLevel(index);
         }
 
         public void SetActiveCatalog(BlockCatalogSO catalog)
@@ -145,7 +213,7 @@ namespace SmashFast.LevelEditor
         {
             ApplyEditorFrameLimit();
             titleContent = new GUIContent("Level Blueprint");
-            minSize = new Vector2(760f, 560f);
+            minSize = new Vector2(340f, 640f);
             wantsMouseMove = true;
             wantsMouseEnterLeaveWindow = true;
             scenePreview = new LevelBlueprintScenePreview();
@@ -164,10 +232,23 @@ namespace SmashFast.LevelEditor
             Undo.undoRedoPerformed -= OnUndoRedo;
             ObjectChangeEvents.changesPublished -= OnAssetChanged;
             EndLevelEdit();
+            if (jsonDirty)
+            {
+                PersistJson(false);
+            }
+
             if (scenePreview != null)
             {
                 scenePreview.Disable();
                 scenePreview = null;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (jsonDirty)
+            {
+                PersistJson(false);
             }
         }
 
@@ -178,11 +259,6 @@ namespace SmashFast.LevelEditor
 
         private void OnSelectionChanged()
         {
-            if (Selection.activeObject is LevelData selectedLevel)
-            {
-                SetActiveLevel(selectedLevel);
-            }
-
             if (Selection.activeObject is BlockCatalogSO selectedCatalog)
             {
                 SetActiveCatalog(selectedCatalog);
@@ -192,8 +268,11 @@ namespace SmashFast.LevelEditor
         private void OnUndoRedo()
         {
             CancelMove();
+            hasSelectedPlacement = false;
             ClampActiveLayer();
+            jsonDirty = true;
             RefreshView();
+            SceneView.RepaintAll();
         }
 
         private void OnAssetChanged(ref ObjectChangeEventStream stream)
@@ -209,8 +288,7 @@ namespace SmashFast.LevelEditor
         private bool TargetsOpenAsset(ref ObjectChangeEventStream stream)
         {
             int catalogId = activeCatalog != null ? activeCatalog.GetInstanceID() : 0;
-            int levelId = activeLevel != null ? activeLevel.GetInstanceID() : 0;
-            if (catalogId == 0 && levelId == 0)
+            if (catalogId == 0)
             {
                 return false;
             }
@@ -224,7 +302,7 @@ namespace SmashFast.LevelEditor
 
                 ChangeAssetObjectPropertiesEventArgs args;
                 stream.GetChangeAssetObjectPropertiesEvent(i, out args);
-                if (args.instanceId == catalogId || args.instanceId == levelId)
+                if (args.instanceId == catalogId)
                 {
                     return true;
                 }
@@ -251,15 +329,36 @@ namespace SmashFast.LevelEditor
             EnsureStyles();
             ClampActiveLayer();
             HandleGlobalEvents();
-            DrawSettings();
-            DrawPresetBar();
+            float matrixHeight = Mathf.Max(
+                MatrixMinHeight,
+                position.height - topAreaHeight - StatusBarHeight - PaletteHeight - LayoutSlack);
+
+            EditorGUILayout.BeginVertical(GUILayout.Width(position.width));
+            EditorGUILayout.BeginVertical();
+            DrawCompactHeader();
+            DrawDatabaseSettingsFoldout();
             DrawLayerBar();
-            DrawBrushBar();
-            DrawAngleRow();
-            DrawMatrix();
-            DrawPalette();
-            DrawFooter();
-            SyncPreview();
+            DrawActionBar();
+            EditorGUILayout.EndVertical();
+            if (Event.current != null && Event.current.type == EventType.Repaint)
+            {
+                float measuredHeight = GUILayoutUtility.GetLastRect().height;
+                if (Mathf.Abs(measuredHeight - topAreaHeight) > 1f)
+                {
+                    topAreaHeight = measuredHeight;
+                    Repaint();
+                }
+            }
+
+            DrawMatrix(matrixHeight);
+            DrawStatusBar();
+            DrawBottomPalette();
+            EditorGUILayout.EndVertical();
+            if (Event.current != null && Event.current.type == EventType.Repaint)
+            {
+                SyncPreview();
+            }
+
             if (hoverChanged)
             {
                 hoverChanged = false;
@@ -310,34 +409,131 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            if (current.keyCode != KeyCode.R || current.alt || current.control || current.command)
+            if (current.alt || current.control || current.command)
             {
                 return;
             }
 
-            int direction = current.shift ? -1 : 1;
-            if (isMovingExistingBlock)
+            if (current.keyCode == KeyCode.R)
             {
-                StepMoveYaw(direction);
-            }
-            else
-            {
-                StepBrushYaw(direction);
+                int direction = current.shift ? -1 : 1;
+                if (isMovingExistingBlock)
+                {
+                    StepMoveYaw(direction);
+                }
+                else
+                {
+                    StepBrushYaw(direction);
+                }
+
+                current.Use();
+                return;
             }
 
-            current.Use();
+            if (current.keyCode == KeyCode.T)
+            {
+                CycleLengthAxis();
+                current.Use();
+            }
         }
 
-        private void DrawSettings()
+        private void DrawCompactHeader()
+        {
+            EnsureRepository();
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("-10", GUILayout.MinWidth(30f)))
+            {
+                NavigateToLevel(editingLevelIndex - 10);
+            }
+
+            if (GUILayout.Button("Prev", GUILayout.MinWidth(30f)))
+            {
+                NavigateToLevel(editingLevelIndex - 1);
+            }
+
+            EditorGUILayout.LabelField("Level", GUILayout.Width(34f));
+            jumpLevelField = EditorGUILayout.IntField(jumpLevelField, GUILayout.MinWidth(30f), GUILayout.MaxWidth(64f));
+            EditorGUILayout.LabelField("/ " + JsonLevelRepository.MaxLevelCount.ToString(), GUILayout.Width(44f));
+            if (GUILayout.Button("Go", GUILayout.MinWidth(26f)))
+            {
+                NavigateToLevel(jumpLevelField);
+            }
+
+            if (GUILayout.Button("Next", GUILayout.MinWidth(30f)))
+            {
+                NavigateToLevel(editingLevelIndex + 1);
+            }
+
+            if (GUILayout.Button("+10", GUILayout.MinWidth(30f)))
+            {
+                NavigateToLevel(editingLevelIndex + 10);
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUI.BeginDisabledGroup(activeLevel == null);
+            EditorGUILayout.LabelField("Max Ammo", GUILayout.Width(64f));
+            EditorGUI.BeginChangeCheck();
+            int maxAmmo = activeLevel != null ? activeLevel.MaxAmmo : 0;
+            maxAmmo = EditorGUILayout.IntField(maxAmmo, GUILayout.Width(40f));
+            if (EditorGUI.EndChangeCheck() && activeLevel != null)
+            {
+                int clampedAmmo = maxAmmo < 0 ? 0 : maxAmmo;
+                CommitLevelChange("Edit Max Ammo", () => activeLevel.MaxAmmo = clampedAmmo);
+            }
+
+            if (GUILayout.Button("Frame Scene", GUILayout.MinWidth(70f)))
+            {
+                FrameLevel();
+            }
+
+            if (GUILayout.Button("Save JSON", GUILayout.MinWidth(70f)))
+            {
+                PersistJson(true);
+                statusMessage = "Saved LevelsDatabase.json.";
+            }
+
+            EditorGUI.EndDisabledGroup();
+            EditorGUILayout.EndHorizontal();
+            DrawWorldScaleRow();
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawWorldScaleRow()
+        {
+            EditorGUI.BeginDisabledGroup(activeCatalog == null);
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("World Scale", GUILayout.Width(76f));
+            float currentScale = activeCatalog != null ? activeCatalog.globalBlockScale : 1f;
+            EditorGUI.BeginChangeCheck();
+            float nextScale = EditorGUILayout.Slider(currentScale, BlockCatalogSO.MinGlobalBlockScale, BlockCatalogSO.MaxGlobalBlockScale);
+            if (EditorGUI.EndChangeCheck() && activeCatalog != null)
+            {
+                Undo.RecordObject(activeCatalog, "Change World Scale");
+                activeCatalog.SetScale(nextScale);
+                EditorUtility.SetDirty(activeCatalog);
+                SceneView.RepaintAll();
+            }
+
+            EditorGUILayout.EndHorizontal();
+            EditorGUI.EndDisabledGroup();
+        }
+
+        private void DrawDatabaseSettingsFoldout()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Level Blueprint", EditorStyles.boldLabel);
-
-            if (activeLevel == null || activeCatalog == null)
+            showDatabaseSettings = EditorGUILayout.Foldout(showDatabaseSettings, "Database & Grid Settings", true);
+            if (!showDatabaseSettings)
             {
-                EditorGUILayout.HelpBox(
-                    "Assign a Level Data asset and a Block Catalog, or create the default test assets.",
-                    MessageType.Info);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            if (activeCatalog == null)
+            {
+                EditorGUILayout.HelpBox("Block Catalog missing. Create default project assets.", MessageType.Info);
                 if (GUILayout.Button("Create Default Level Assets"))
                 {
                     LevelBlueprintSampleAssets.Create();
@@ -346,53 +542,29 @@ namespace SmashFast.LevelEditor
             }
 
             EditorGUI.BeginChangeCheck();
-            LevelData nextLevel = (LevelData)EditorGUILayout.ObjectField("Level Data", activeLevel, typeof(LevelData), false);
-            if (EditorGUI.EndChangeCheck())
-            {
-                SetActiveLevel(nextLevel);
-            }
-
-            EditorGUI.BeginChangeCheck();
-            BlockCatalogSO nextCatalog = (BlockCatalogSO)EditorGUILayout.ObjectField("Block Catalog", activeCatalog, typeof(BlockCatalogSO), false);
+            BlockCatalogSO nextCatalog = (BlockCatalogSO)EditorGUILayout.ObjectField(
+                "Block Catalog",
+                activeCatalog,
+                typeof(BlockCatalogSO),
+                false);
             if (EditorGUI.EndChangeCheck())
             {
                 SetActiveCatalog(nextCatalog);
             }
 
-            if (activeLevel == null)
+            if (activeLevel != null)
             {
-                EditorGUILayout.EndVertical();
-                return;
-            }
-
-            EditorGUI.BeginChangeCheck();
-            int levelIndex = EditorGUILayout.IntField("Level Index", activeLevel.LevelIndex);
-            if (EditorGUI.EndChangeCheck())
-            {
-                int clampedIndex = levelIndex < 0 ? 0 : levelIndex;
-                CommitLevelChange("Edit Level Index", () => activeLevel.LevelIndex = clampedIndex);
-            }
-
-            EditorGUI.BeginChangeCheck();
-            int maxAmmo = EditorGUILayout.IntField("Max Ammo", activeLevel.MaxAmmo);
-            if (EditorGUI.EndChangeCheck())
-            {
-                int clampedAmmo = maxAmmo < 0 ? 0 : maxAmmo;
-                CommitLevelChange("Edit Max Ammo", () => activeLevel.MaxAmmo = clampedAmmo);
-            }
-
-            showGridSettings = EditorGUILayout.Foldout(showGridSettings, "Grid Settings", true);
-            if (showGridSettings)
-            {
-                EditorGUI.indentLevel++;
+                Vector3Int dimensions = activeLevel.GridDimensions;
                 EditorGUI.BeginChangeCheck();
-                Vector3Int dimensions = EditorGUILayout.Vector3IntField("Grid Dimensions", activeLevel.GridDimensions);
+                int gridX = EditorGUILayout.DelayedIntField("Grid X", dimensions.x);
+                int gridY = EditorGUILayout.DelayedIntField("Grid Y", dimensions.y);
+                int gridZ = EditorGUILayout.DelayedIntField("Grid Z", dimensions.z);
                 if (EditorGUI.EndChangeCheck())
                 {
                     Vector3Int clampedDimensions = new Vector3Int(
-                        Mathf.Max(1, dimensions.x),
-                        Mathf.Max(1, dimensions.y),
-                        Mathf.Max(1, dimensions.z));
+                        Mathf.Max(1, gridX),
+                        Mathf.Max(1, gridY),
+                        Mathf.Max(1, gridZ));
                     CommitLevelChange("Edit Grid Dimensions", () =>
                     {
                         activeLevel.GridDimensions = clampedDimensions;
@@ -413,77 +585,15 @@ namespace SmashFast.LevelEditor
                 {
                     CommitLevelChange("Edit Origin Offset", () => activeLevel.OriginOffset = originOffset);
                 }
-
-                if (GUILayout.Button("Frame Blueprint In Scene"))
-                {
-                    FrameLevel();
-                }
-
-                EditorGUI.indentLevel--;
             }
 
-            EditorGUILayout.EndVertical();
-        }
-
-        private void DrawPresetBar()
-        {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Quick Architecture Presets", EditorStyles.boldLabel);
-            if (activeLevel == null || activeCatalog == null)
+            EditorGUI.BeginDisabledGroup(activeCatalog == null);
+            if (GUILayout.Button("Generate All 1000 Levels To JSON", GUILayout.Height(24f)))
             {
-                EditorGUILayout.HelpBox("Select a level and a catalog to build a preset.", MessageType.None);
-                EditorGUILayout.EndVertical();
-                return;
+                GenerateAllLevelsToJson();
             }
 
-            EditorGUILayout.BeginHorizontal();
-            bool autoBuild = GUILayout.Button("\u26A1 Auto-Build By Level Index (Smart Difficulty)");
-            bool batchBuild = GUILayout.Button("Batch Generate Levels (1..30)");
-            EditorGUILayout.EndHorizontal();
-            if (autoBuild)
-            {
-                AutoBuildByLevelIndex();
-            }
-
-            if (batchBuild)
-            {
-                BatchGenerateLevels();
-            }
-
-            EditorGUILayout.BeginHorizontal();
-            bool straight = GUILayout.Button("Preset: Straight Apartment");
-            bool angled = GUILayout.Button("Preset: 45 Degree Angled Tower");
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.BeginHorizontal();
-            bool glass = GUILayout.Button("Preset: Glass Weak-Point");
-            bool shelf = GUILayout.Button("Preset: Shelf & Jars");
-            EditorGUILayout.EndHorizontal();
-            bool twin = GUILayout.Button("Preset: V-Angled Twin Tables");
-            if (straight)
-            {
-                ApplyPreset(0);
-            }
-
-            if (angled)
-            {
-                ApplyPreset(1);
-            }
-
-            if (glass)
-            {
-                ApplyPreset(2);
-            }
-
-            if (shelf)
-            {
-                ApplyPreset(3);
-            }
-
-            if (twin)
-            {
-                ApplyPreset(4);
-            }
-
+            EditorGUI.EndDisabledGroup();
             EditorGUILayout.EndVertical();
         }
 
@@ -517,22 +627,22 @@ namespace SmashFast.LevelEditor
                 selectedZLayer = presetBuilder.LastAnchorLayer;
             }
 
-            AssetDatabase.SaveAssets();
+            PersistJson(true);
             hasSelectedPlacement = false;
             statusMessage = message;
         }
 
-        private void AutoBuildByLevelIndex()
+        private void RegenerateCurrentLevel()
         {
             if (activeLevel == null || activeCatalog == null)
             {
-                statusMessage = "Select a level and a catalog first.";
+                statusMessage = "Select a catalog first.";
                 return;
             }
 
             if (Application.isPlaying)
             {
-                statusMessage = "Exit Play Mode before building a level.";
+                statusMessage = "Exit Play Mode before regenerating.";
                 return;
             }
 
@@ -542,29 +652,24 @@ namespace SmashFast.LevelEditor
                 presetBuilder = new LevelArchitecturePresetBuilder();
             }
 
-            int index = activeLevel.LevelIndex;
-            if (index < 1)
-            {
-                index = 1;
-            }
-
+            int index = editingLevelIndex < 1 ? 1 : editingLevelIndex;
             string message = string.Empty;
-            CommitLevelChange("Auto Build Level", () =>
+            CommitLevelChange("Regenerate Current Level", () =>
             {
                 activeLevel.LevelIndex = index;
                 message = presetBuilder.GenerateForLevelIndex(activeLevel, activeCatalog, index);
             });
             selectedZLayer = presetBuilder.LastAnchorLayer;
-            AssetDatabase.SaveAssets();
+            PersistJson(true);
             hasSelectedPlacement = false;
             statusMessage = message;
         }
 
-        private void BatchGenerateLevels()
+        private void GenerateAllLevelsToJson()
         {
-            if (activeLevel == null || activeCatalog == null)
+            if (activeCatalog == null)
             {
-                statusMessage = "Select a level and a catalog first.";
+                statusMessage = "Select a catalog first.";
                 return;
             }
 
@@ -574,47 +679,77 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
+            bool confirmed = EditorUtility.DisplayDialog(
+                "Generate 1000 Levels",
+                "This will overwrite every level in LevelsDatabase.json (1.."
+                    + JsonLevelRepository.MaxLevelCount.ToString()
+                    + "). Continue?",
+                "Generate",
+                "Cancel");
+            if (!confirmed)
+            {
+                statusMessage = "Generate 1000 cancelled.";
+                return;
+            }
+
             CancelMove();
+            EnsureRepository();
             if (presetBuilder == null)
             {
                 presetBuilder = new LevelArchitecturePresetBuilder();
             }
 
-            string folder = ResolveLevelFolder();
-            int built = 0;
-            for (int index = 1; index <= 30; index++)
+            LevelData template = activeLevel;
+            LevelData temp = new LevelData();
+            if (template != null)
             {
-                string path = folder + "/Level_" + index.ToString("00") + ".asset";
-                LevelData level = AssetDatabase.LoadAssetAtPath<LevelData>(path);
-                if (level == null)
-                {
-                    level = ScriptableObject.CreateInstance<LevelData>();
-                    CopyGrid(activeLevel, level);
-                    AssetDatabase.CreateAsset(level, path);
-                }
-
-                presetBuilder.GenerateForLevelIndex(level, activeCatalog, index);
-                EditorUtility.SetDirty(level);
-                built++;
+                CopyGrid(template, temp);
+            }
+            else
+            {
+                temp.GridDimensions = new Vector3Int(16, 14, 6);
+                temp.CellSize = Vector3.one;
+                temp.OriginOffset = Vector3.zero;
+                temp.FallEliminationY = -1.5f;
             }
 
-            RegisterLevels(folder);
-            AssetDatabase.SaveAssets();
+            List<LevelRecord> records = new List<LevelRecord>(JsonLevelRepository.MaxLevelCount);
+            int emptyCount = 0;
+            try
+            {
+                for (int index = 1; index <= JsonLevelRepository.MaxLevelCount; index++)
+                {
+                    if ((index % 20) == 0 || index == JsonLevelRepository.MaxLevelCount)
+                    {
+                        float progress = index / (float)JsonLevelRepository.MaxLevelCount;
+                        EditorUtility.DisplayProgressBar(
+                            "Generate 1000 Levels",
+                            "Building level " + index.ToString() + " / " + JsonLevelRepository.MaxLevelCount.ToString(),
+                            progress);
+                    }
+
+                    string message = presetBuilder.GenerateForLevelIndex(temp, activeCatalog, index);
+                    if (temp.PlacementCount <= 0)
+                    {
+                        emptyCount++;
+                    }
+
+                    records.Add(levelRepository.CreateRecordFromLevel(temp));
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+
+            levelRepository.ReplaceAll(records);
+            PersistJson(true);
+            jsonDirty = false;
+            NavigateToLevel(editingLevelIndex);
             selectedZLayer = 0;
             hasSelectedPlacement = false;
-            statusMessage = "Built " + built.ToString() + " levels (1..30) in " + folder + ".";
-        }
-
-        private string ResolveLevelFolder()
-        {
-            string assetPath = AssetDatabase.GetAssetPath(activeLevel);
-            int slash = assetPath.LastIndexOf('/');
-            if (slash > 0)
-            {
-                return assetPath.Substring(0, slash);
-            }
-
-            return LevelAssetPaths.LevelsFolder;
+            statusMessage = "Generated " + records.Count.ToString()
+                + " levels into LevelsDatabase.json. Empty=" + emptyCount.ToString() + ".";
         }
 
         private void CopyGrid(LevelData source, LevelData target)
@@ -623,113 +758,286 @@ namespace SmashFast.LevelEditor
             target.CellSize = source.CellSize;
             target.OriginOffset = source.OriginOffset;
             target.FallEliminationY = source.FallEliminationY;
+            target.MaxAmmo = source.MaxAmmo;
+            target.ParAmmo = source.ParAmmo;
         }
 
-        private void RegisterLevels(string folder)
+        private void DrawActionBar()
         {
-            string[] databaseGuids = AssetDatabase.FindAssets("t:LevelDatabaseSO");
-            for (int databaseIndex = 0; databaseIndex < databaseGuids.Length; databaseIndex++)
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+            EditorGUI.BeginDisabledGroup(activeLevel == null || activeCatalog == null);
+            if (GUILayout.Button("Regenerate", GUILayout.MinWidth(70f)))
             {
-                string databasePath = AssetDatabase.GUIDToAssetPath(databaseGuids[databaseIndex]);
-                LevelDatabaseSO database = AssetDatabase.LoadAssetAtPath<LevelDatabaseSO>(databasePath);
-                if (database == null)
-                {
-                    continue;
-                }
-
-                SerializedObject serializedDatabase = new SerializedObject(database);
-                SerializedProperty levels = serializedDatabase.FindProperty("levels");
-                if (levels == null || !levels.isArray)
-                {
-                    continue;
-                }
-
-                for (int index = 1; index <= 30; index++)
-                {
-                    string path = folder + "/Level_" + index.ToString("00") + ".asset";
-                    LevelData level = AssetDatabase.LoadAssetAtPath<LevelData>(path);
-                    if (level == null || ContainsLevel(levels, level))
-                    {
-                        continue;
-                    }
-
-                    int slot = levels.arraySize;
-                    levels.arraySize++;
-                    levels.GetArrayElementAtIndex(slot).objectReferenceValue = level;
-                }
-
-                serializedDatabase.ApplyModifiedProperties();
-                EditorUtility.SetDirty(database);
+                RegenerateCurrentLevel();
             }
+
+            selectedPresetIndex = EditorGUILayout.Popup(selectedPresetIndex, presetLabels, GUILayout.MinWidth(90f));
+            EditorGUI.BeginDisabledGroup(selectedPresetIndex <= 0);
+            if (GUILayout.Button("Apply", GUILayout.Width(50f)))
+            {
+                ApplyPreset(selectedPresetIndex - 1);
+            }
+
+            EditorGUI.EndDisabledGroup();
+            EditorGUI.EndDisabledGroup();
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            string brushLabel = "None";
+            if (hasBrush && activeCatalog != null && activeCatalog.TryGetBlockDefinition(brushBlockId, out BlockDefinition brushDefinition))
+            {
+                brushLabel = GetShortBlockName(brushDefinition.blockName) + " #" + brushDefinition.blockId.ToString();
+            }
+
+            EditorGUILayout.LabelField("Brush", GUILayout.Width(36f));
+            EditorGUILayout.LabelField(brushLabel, EditorStyles.boldLabel, GUILayout.MinWidth(40f));
+            if (GUILayout.Button("Clear Brush", GUILayout.MinWidth(76f)))
+            {
+                hasBrush = false;
+                brushBlockId = 0;
+                statusMessage = "Brush cleared.";
+                hoverChanged = true;
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            if (hasBrush || hasSelectedPlacement)
+            {
+                DrawCompactOrientationRow();
+            }
+
+            if (!hasBrush && hasSelectedPlacement && activeLevel != null
+                && activeLevel.IsFoundationTable(selectedPlacement, activeCatalog))
+            {
+                DrawSelectedTableScaleRow();
+            }
+
+            EditorGUILayout.EndVertical();
         }
 
-        private bool ContainsLevel(SerializedProperty levels, LevelData level)
+        private void DrawCompactOrientationRow()
         {
-            for (int i = 0; i < levels.arraySize; i++)
-            {
-                if (levels.GetArrayElementAtIndex(i).objectReferenceValue == level)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private void DrawAngleRow()
-        {
-            if (!hasBrush && !hasSelectedPlacement)
-            {
-                return;
-            }
-
-            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
-            string title = hasBrush ? "Brush Angle" : "Block Angle";
+            EditorGUILayout.BeginHorizontal();
+            string title = hasBrush ? "Angle" : "Block";
             if (!hasBrush && hasSelectedPlacement && activeLevel != null && activeLevel.IsFoundationTable(selectedPlacement, activeCatalog))
             {
-                title = "Table Angle";
+                title = "Table";
             }
 
-            EditorGUILayout.LabelField(title, GUILayout.Width(92f));
-            if (GUILayout.Button("-45"))
+            EditorGUILayout.LabelField(title, GUILayout.Width(38f));
+            if (GUILayout.Button("-45", GUILayout.MinWidth(24f)))
             {
                 ApplyAngle(-45f);
             }
 
-            if (GUILayout.Button("-30"))
+            if (GUILayout.Button("-30", GUILayout.MinWidth(24f)))
             {
                 ApplyAngle(-30f);
             }
 
-            if (GUILayout.Button("0"))
+            if (GUILayout.Button("0", GUILayout.MinWidth(20f)))
             {
                 ApplyAngle(0f);
             }
 
-            if (GUILayout.Button("+30"))
+            if (GUILayout.Button("+30", GUILayout.MinWidth(24f)))
             {
                 ApplyAngle(30f);
             }
 
-            if (GUILayout.Button("+45"))
+            if (GUILayout.Button("+45", GUILayout.MinWidth(24f)))
             {
                 ApplyAngle(45f);
             }
 
-            if (GUILayout.Button("+90"))
+            if (GUILayout.Button("+90", GUILayout.MinWidth(24f)))
             {
                 ApplyAngle(90f);
+            }
+
+            EditorGUILayout.LabelField("Axis", GUILayout.Width(28f));
+            if (GUILayout.Button("X", GUILayout.MinWidth(20f)))
+            {
+                ApplyLengthAxis(0);
+            }
+
+            if (GUILayout.Button("Y", GUILayout.MinWidth(20f)))
+            {
+                ApplyLengthAxis(1);
+            }
+
+            if (GUILayout.Button("Z", GUILayout.MinWidth(20f)))
+            {
+                ApplyLengthAxis(2);
             }
 
             EditorGUILayout.EndHorizontal();
         }
 
+        private void DrawSelectedTableScaleRow()
+        {
+            Vector3Int size = activeLevel.GetSizeInCells(selectedPlacement, activeCatalog);
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("TableTop", GUILayout.Width(52f));
+            EditorGUILayout.LabelField("Width", GUILayout.Width(38f));
+            if (GUILayout.Button("-", GUILayout.Width(22f)))
+            {
+                ApplySelectedTableSize(size.x - 1, size.z);
+            }
+
+            EditorGUILayout.LabelField(size.x.ToString(), GUILayout.Width(16f));
+            if (GUILayout.Button("+", GUILayout.Width(22f)))
+            {
+                ApplySelectedTableSize(size.x + 1, size.z);
+            }
+
+            EditorGUILayout.LabelField("Depth", GUILayout.Width(38f));
+            if (GUILayout.Button("-", GUILayout.Width(22f)))
+            {
+                ApplySelectedTableSize(size.x, size.z - 1);
+            }
+
+            EditorGUILayout.LabelField(size.z.ToString(), GUILayout.Width(16f));
+            if (GUILayout.Button("+", GUILayout.Width(22f)))
+            {
+                ApplySelectedTableSize(size.x, size.z + 1);
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void ApplySelectedTableSize(int width, int depth)
+        {
+            if (activeLevel == null || !hasSelectedPlacement)
+            {
+                return;
+            }
+
+            int clampedWidth = Mathf.Clamp(width, 1, 8);
+            int clampedDepth = Mathf.Clamp(depth, 1, 6);
+            Vector3Int newSize = new Vector3Int(clampedWidth, 1, clampedDepth);
+            Vector3Int currentSize = activeLevel.GetEffectiveSize(selectedPlacement, activeCatalog);
+            if (newSize == activeLevel.GetSizeInCells(selectedPlacement, activeCatalog))
+            {
+                return;
+            }
+
+            Vector3Int rotated = blockFootprint.GetEffectiveSize(newSize, selectedPlacement.rotationEuler);
+            PlacementValidationStatus status = activeLevel.ValidatePlacementIgnoring(
+                selectedPlacement.gridPosition,
+                rotated,
+                activeCatalog,
+                selectedPlacement.gridPosition);
+            if (status == PlacementValidationStatus.InvalidOutOfBounds)
+            {
+                statusMessage = "TableTop " + clampedWidth.ToString() + "x" + clampedDepth.ToString() + " does not fit.";
+                Repaint();
+                return;
+            }
+
+            BeginLevelEdit("Resize Table");
+            BlockPlacementData updated = selectedPlacement;
+            updated.customSize = newSize;
+            activeLevel.TryRemoveAt(selectedPlacement.gridPosition);
+            if (!activeLevel.PlaceBlock(updated, rotated, activeCatalog))
+            {
+                activeLevel.PlaceBlock(selectedPlacement, currentSize, activeCatalog);
+                EndLevelEdit();
+                statusMessage = "TableTop resize failed.";
+                return;
+            }
+
+            selectedPlacement = updated;
+            hasSelectedPlacement = true;
+            statusMessage = "TableTop resized to " + clampedWidth.ToString() + "x1x" + clampedDepth.ToString() + ".";
+            EndLevelEdit();
+            hoverChanged = true;
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
         private void ApplyAngle(float yaw)
+        {
+            Vector3 euler = hasBrush ? brushRotationEuler : selectedPlacement.rotationEuler;
+            euler.y = yaw;
+            ApplyOrientation(euler, "Yaw set to " + yaw.ToString("0") + ".");
+        }
+
+        private void ApplyLengthAxis(int axis)
+        {
+            BlockDefinition definition;
+            if (!TryGetActiveDefinition(out definition))
+            {
+                return;
+            }
+
+            Vector3Int sizeInCells = ResolveActiveSizeInCells(definition);
+            Vector3 euler = blockFootprint.ResolveLengthAxisEuler(sizeInCells, axis);
+            string axisName = "X";
+            if (axis == 1)
+            {
+                axisName = "Y";
+            }
+            else if (axis == 2)
+            {
+                axisName = "Z";
+            }
+
+            ApplyOrientation(euler, "Axis set to " + axisName + ".");
+        }
+
+        private Vector3Int ResolveActiveSizeInCells(BlockDefinition definition)
+        {
+            if (!hasBrush && hasSelectedPlacement && activeLevel != null)
+            {
+                return activeLevel.GetSizeInCells(selectedPlacement, activeCatalog);
+            }
+
+            Vector3Int customSize = ResolveBrushCustomSize(definition);
+            if (customSize.x > 0)
+            {
+                return customSize;
+            }
+
+            return definition.sizeInCells;
+        }
+
+        private void CycleLengthAxis()
+        {
+            BlockDefinition definition;
+            if (!TryGetActiveDefinition(out definition))
+            {
+                return;
+            }
+
+            Vector3 current = hasBrush ? brushRotationEuler : selectedPlacement.rotationEuler;
+            Vector3Int effective = blockFootprint.GetEffectiveSize(ResolveActiveSizeInCells(definition), current);
+            int currentAxis = 0;
+            if (effective.y >= effective.x && effective.y >= effective.z)
+            {
+                currentAxis = 1;
+            }
+            else if (effective.z >= effective.x && effective.z >= effective.y)
+            {
+                currentAxis = 2;
+            }
+
+            int nextAxis = currentAxis + 1;
+            if (nextAxis > 2)
+            {
+                nextAxis = 0;
+            }
+
+            ApplyLengthAxis(nextAxis);
+        }
+
+        private void ApplyOrientation(Vector3 euler, string message)
         {
             if (hasBrush)
             {
-                brushRotationEuler.y = yaw;
-                statusMessage = "Brush yaw " + yaw.ToString("0") + ".";
+                brushRotationEuler = euler;
+                statusMessage = message;
                 hoverChanged = true;
                 Repaint();
                 SceneView.RepaintAll();
@@ -747,9 +1055,8 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            Vector3 euler = selectedPlacement.rotationEuler;
-            euler.y = yaw;
-            Vector3Int size = blockFootprint.GetEffectiveSize(definition.sizeInCells, euler);
+            Vector3Int sizeInCells = activeLevel.GetSizeInCells(selectedPlacement, activeCatalog);
+            Vector3Int size = blockFootprint.GetEffectiveSize(sizeInCells, euler);
             PlacementValidationStatus status = activeLevel.ValidatePlacementIgnoring(
                 selectedPlacement.gridPosition,
                 size,
@@ -757,13 +1064,13 @@ namespace SmashFast.LevelEditor
                 selectedPlacement.gridPosition);
             if (status == PlacementValidationStatus.InvalidOutOfBounds)
             {
-                statusMessage = "That angle does not fit inside the grid.";
+                statusMessage = "That orientation does not fit inside the grid.";
                 return;
             }
 
             BlockPlacementData updated = selectedPlacement;
             updated.rotationEuler = euler;
-            CommitLevelChange("Set Block Yaw", () => activeLevel.TrySetPlacement(updated));
+            CommitLevelChange("Set Block Orientation", () => activeLevel.TrySetPlacement(updated));
             selectedPlacement = updated;
             if (isMovingExistingBlock)
             {
@@ -772,7 +1079,32 @@ namespace SmashFast.LevelEditor
             }
 
             AssetDatabase.SaveAssets();
-            statusMessage = "Yaw set to " + yaw.ToString("0") + ".";
+            statusMessage = message;
+            hoverChanged = true;
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        private bool TryGetActiveDefinition(out BlockDefinition definition)
+        {
+            definition = default;
+            if (activeCatalog == null)
+            {
+                return false;
+            }
+
+            int blockId = brushBlockId;
+            if (!hasBrush)
+            {
+                if (!hasSelectedPlacement)
+                {
+                    return false;
+                }
+
+                blockId = selectedPlacement.blockId;
+            }
+
+            return activeCatalog.TryGetBlockDefinition(blockId, out definition);
         }
 
         private void DrawLayerBar()
@@ -780,7 +1112,7 @@ namespace SmashFast.LevelEditor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             if (activeLevel == null)
             {
-                EditorGUILayout.LabelField("Select a Level Data asset to edit a Z layer.");
+                EditorGUILayout.LabelField("No level loaded.");
                 EditorGUILayout.EndVertical();
                 return;
             }
@@ -788,36 +1120,22 @@ namespace SmashFast.LevelEditor
             int layerCount = activeLevel.GridDimensions.z;
             EnsureLayerLabels(layerCount);
             int maxLayer = layerCount - 1;
-            if (layerCount <= 8)
+            int toolbarLayer = GUILayout.Toolbar(selectedZLayer, layerLabels, GUILayout.MinHeight(22f));
+            if (toolbarLayer != selectedZLayer)
             {
-                int toolbarLayer = GUILayout.Toolbar(selectedZLayer, layerLabels);
-                if (toolbarLayer != selectedZLayer)
-                {
-                    selectedZLayer = toolbarLayer;
-                    SyncPreview();
-                    SceneView.RepaintAll();
-                }
-            }
-
-            EditorGUI.BeginChangeCheck();
-            int sliderLayer = EditorGUILayout.IntSlider("Z Layer", selectedZLayer, 0, maxLayer);
-            if (EditorGUI.EndChangeCheck())
-            {
-                selectedZLayer = sliderLayer;
+                selectedZLayer = toolbarLayer;
                 SyncPreview();
                 SceneView.RepaintAll();
             }
 
-            EditorGUILayout.LabelField("Blocks on layer " + selectedZLayer.ToString(), activeLevel.CountLayer(selectedZLayer, activeCatalog).ToString());
-
             EditorGUILayout.BeginHorizontal();
             EditorGUI.BeginDisabledGroup(selectedZLayer <= 0);
-            bool copyPrevious = GUILayout.Button("Copy Previous Into Layer");
+            bool copyPrevious = GUILayout.Button("Copy Prev", GUILayout.MinWidth(60f));
             EditorGUI.EndDisabledGroup();
             EditorGUI.BeginDisabledGroup(selectedZLayer >= maxLayer);
-            bool copyNext = GUILayout.Button("Copy Layer To Next");
+            bool copyNext = GUILayout.Button("Copy Next", GUILayout.MinWidth(60f));
             EditorGUI.EndDisabledGroup();
-            bool clearLayer = GUILayout.Button("Clear Layer");
+            bool clearLayer = GUILayout.Button("Clear Layer", GUILayout.MinWidth(60f));
             EditorGUILayout.EndHorizontal();
 
             if (copyPrevious)
@@ -838,31 +1156,9 @@ namespace SmashFast.LevelEditor
             EditorGUILayout.EndVertical();
         }
 
-        private void DrawBrushBar()
+        private void DrawMatrix(float matrixHeight)
         {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            string brushLabel = "None";
-            if (hasBrush && activeCatalog != null && activeCatalog.TryGetBlockDefinition(brushBlockId, out BlockDefinition definition))
-            {
-                brushLabel = GetBlockLabel(definition) + " (#" + definition.blockId.ToString() + ")";
-            }
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Brush", brushLabel);
-            if (GUILayout.Button("Clear Brush", GUILayout.Width(110f)))
-            {
-                hasBrush = false;
-                statusMessage = "Brush cleared.";
-                hoverChanged = true;
-            }
-
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.EndVertical();
-        }
-
-        private void DrawMatrix()
-        {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(matrixHeight));
             EditorGUILayout.LabelField("Matrix  |  Y = 0 is the ground row", EditorStyles.boldLabel);
 
             if (activeLevel == null)
@@ -886,13 +1182,7 @@ namespace SmashFast.LevelEditor
             }
 
             Vector3Int dimensions = activeLevel.GridDimensions;
-            int cellCount = dimensions.x * dimensions.y;
-            if (cellCount > 600)
-            {
-                EditorGUILayout.HelpBox(
-                    "This layer has " + cellCount.ToString() + " cells. Large matrices are slower to draw.",
-                    MessageType.Warning);
-            }
+            UpdateMatrixCellMetrics(dimensions, matrixHeight);
 
             bool trackHover = ShouldTrackHover(Event.current);
             bool hadHover = hasHoveredCell;
@@ -907,13 +1197,17 @@ namespace SmashFast.LevelEditor
                 UpdateHoverPresentation();
             }
 
-            matrixScroll = EditorGUILayout.BeginScrollView(matrixScroll, GUILayout.ExpandHeight(true));
+            EditorGUILayout.BeginVertical();
             EnsureCellRectBuffer(dimensions.x, dimensions.y);
             DrawColumnHeaders(dimensions.x);
             for (int y = dimensions.y - 1; y >= 0; y--)
             {
                 EditorGUILayout.BeginHorizontal();
-                Rect rowLabelRect = GUILayoutUtility.GetRect(28f, CellHeight, GUILayout.Width(28f), GUILayout.Height(CellHeight));
+                Rect rowLabelRect = GUILayoutUtility.GetRect(
+                    MatrixRowLabelWidth,
+                    matrixCellHeight,
+                    GUILayout.Width(MatrixRowLabelWidth),
+                    GUILayout.Height(matrixCellHeight));
                 if (Event.current.type == EventType.Repaint)
                 {
                     cellLabelStyle.normal.textColor = new Color(0.75f, 0.92f, 0.96f, 1f);
@@ -925,7 +1219,7 @@ namespace SmashFast.LevelEditor
                     DrawCell(new Vector3Int(x, y, selectedZLayer));
                     if (x < dimensions.x - 1)
                     {
-                        GUILayout.Space(2f);
+                        GUILayout.Space(MatrixCellGap);
                     }
                 }
 
@@ -938,7 +1232,7 @@ namespace SmashFast.LevelEditor
                 DrawUnifiedFrames();
             }
 
-            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
             EditorGUILayout.EndVertical();
 
             if (!trackHover)
@@ -956,13 +1250,28 @@ namespace SmashFast.LevelEditor
             UpdateHoverPresentation();
         }
 
+        private void UpdateMatrixCellMetrics(Vector3Int dimensions, float matrixHeight)
+        {
+            int rows = Mathf.Max(1, dimensions.y);
+            int columns = Mathf.Max(1, dimensions.x);
+            float matrixWidth = position.width - WindowPadding;
+            float widthBudget = matrixWidth - MatrixHorizontalOverhead - (MatrixCellGap * (columns - 1));
+            float heightBudget = matrixHeight - MatrixVerticalOverhead;
+            matrixCellWidth = Mathf.Max(MinMatrixCellSize, Mathf.Floor(widthBudget / columns));
+            matrixCellHeight = Mathf.Max(MinMatrixCellSize, Mathf.Floor(heightBudget / rows));
+        }
+
         private void DrawColumnHeaders(int width)
         {
             EditorGUILayout.BeginHorizontal();
             GUILayout.Space(28f);
             for (int x = 0; x < width; x++)
             {
-                Rect headerRect = GUILayoutUtility.GetRect(CellWidth, 18f, GUILayout.Width(CellWidth), GUILayout.Height(18f));
+                Rect headerRect = GUILayoutUtility.GetRect(
+                    matrixCellWidth,
+                    16f,
+                    GUILayout.Width(matrixCellWidth),
+                    GUILayout.Height(16f));
                 if (Event.current.type == EventType.Repaint)
                 {
                     cellLabelStyle.normal.textColor = new Color(0.75f, 0.92f, 0.96f, 1f);
@@ -981,10 +1290,10 @@ namespace SmashFast.LevelEditor
         private void DrawCell(Vector3Int cell)
         {
             Rect cellRect = GUILayoutUtility.GetRect(
-                CellWidth,
-                CellHeight,
-                GUILayout.Width(CellWidth),
-                GUILayout.Height(CellHeight));
+                matrixCellWidth,
+                matrixCellHeight,
+                GUILayout.Width(matrixCellWidth),
+                GUILayout.Height(matrixCellHeight));
             Event current = Event.current;
             bool inside = current != null && cellRect.Contains(current.mousePosition);
             if (inside && ShouldTrackHover(current))
@@ -1022,9 +1331,9 @@ namespace SmashFast.LevelEditor
             bool inside)
         {
             Vector3Int effectiveSize = Vector3Int.one;
-            if (occupied && hasDefinition)
+            if (occupied && hasDefinition && activeLevel != null)
             {
-                effectiveSize = blockFootprint.GetEffectiveSize(definition.sizeInCells, placement.rotationEuler);
+                effectiveSize = activeLevel.GetEffectiveSize(placement, activeCatalog);
             }
 
             bool multiCell = occupied && (effectiveSize.x > 1 || effectiveSize.y > 1);
@@ -1112,8 +1421,10 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            string blockName = hasDefinition ? GetBlockLabel(definition) : ("#" + placement.blockId.ToString());
-            DrawCenteredLabel(cellRect, blockName + "\n" + FormatFootprint(effectiveSize), fill);
+            string label = hasDefinition
+                ? FormatMatrixBlockLabel(definition.blockName, effectiveSize, true)
+                : ("#" + placement.blockId.ToString() + "\n" + FormatFootprint(effectiveSize));
+            DrawCenteredLabel(cellRect, label, fill);
         }
 
         private void DrawMergedBlockLabels()
@@ -1159,9 +1470,11 @@ namespace SmashFast.LevelEditor
                 }
 
                 DrawBorder(mergedRect, new Color(0.08f, 0.09f, 0.1f, 0.95f), 2f);
-                string blockName = hasDefinition ? GetBlockLabel(definition) : ("#" + placement.blockId.ToString());
+                string label = hasDefinition
+                    ? FormatMatrixBlockLabel(definition.blockName, size, false)
+                    : ("#" + placement.blockId.ToString() + " " + FormatFootprint(size));
                 Color fill = hasDefinition ? definition.editorColor : new Color(0.45f, 0.45f, 0.48f, 1f);
-                DrawCenteredLabel(mergedRect, blockName + "\n" + FormatFootprint(size), fill);
+                DrawCenteredLabel(mergedRect, label, fill);
             }
         }
 
@@ -1359,7 +1672,11 @@ namespace SmashFast.LevelEditor
 
             dragFootprintActive = true;
             dragFootprintBlockId = blockId;
-            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(definition.sizeInCells, brushRotationEuler);
+            hasBrush = true;
+            brushBlockId = blockId;
+            Vector3Int customSize = ResolveBrushCustomSize(definition);
+            Vector3Int sizeInCells = customSize.x > 0 ? customSize : definition.sizeInCells;
+            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(sizeInCells, brushRotationEuler);
             PlacementValidationStatus status = PlacementValidationStatus.InvalidOutOfBounds;
             if (activeLevel != null)
             {
@@ -1399,44 +1716,30 @@ namespace SmashFast.LevelEditor
             current.Use();
         }
 
-        private void DrawPalette()
+        private void DrawBottomPalette()
         {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Block Palette", EditorStyles.boldLabel);
+            float availWidth = position.width - WindowPadding - 8f;
+            bool narrow = position.width < NarrowPaletteWidth;
+            float filterHeight = narrow ? 48f : 26f;
+            float gridHeight = PaletteHeight - filterHeight - SizeStripHeight - PaletteVerticalSlack;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(PaletteHeight));
+            DrawPaletteFilterRow(availWidth, narrow);
+
             if (activeCatalog == null)
             {
                 EditorGUILayout.HelpBox("Assign a Block Catalog to choose blocks.", MessageType.None);
-                EditorGUILayout.EndVertical();
-                return;
             }
-
-            if (activeCatalog.BlockCount == 0)
+            else if (activeCatalog.FamilyCount == 0 && activeCatalog.StandaloneCount == 0)
             {
-                EditorGUILayout.HelpBox("The catalog has no blocks yet. Add Block Definition entries on the catalog asset.", MessageType.Warning);
-                EditorGUILayout.EndVertical();
-                return;
+                EditorGUILayout.HelpBox("The catalog has no families or standalone blocks yet.", MessageType.Warning);
             }
-
-            paletteScroll = EditorGUILayout.BeginScrollView(paletteScroll, true, false, GUILayout.Height(156f));
-            EditorGUILayout.BeginHorizontal();
-            int count = activeCatalog.BlockCount;
-            for (int i = 0; i < count; i++)
+            else
             {
-                BlockDefinition definition;
-                if (!activeCatalog.TryGetBlockByIndex(i, out definition))
-                {
-                    continue;
-                }
-
-                DrawPaletteCard(definition);
-                if (i < count - 1)
-                {
-                    GUILayout.Space(6f);
-                }
+                DrawSizeStrip(availWidth);
+                DrawPaletteGrid(availWidth, gridHeight);
             }
 
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
 
             if (AssetPreview.IsLoadingAssetPreviews())
@@ -1445,35 +1748,534 @@ namespace SmashFast.LevelEditor
             }
         }
 
-        private void DrawPaletteCard(BlockDefinition definition)
+        private void DrawPaletteFilterRow(float availWidth, bool narrow)
         {
-            Rect cardRect = GUILayoutUtility.GetRect(
-                PaletteCardWidth,
-                PaletteCardHeight,
-                GUILayout.Width(PaletteCardWidth),
-                GUILayout.Height(PaletteCardHeight));
-            bool selected = hasBrush && brushBlockId == definition.blockId;
-            Event current = Event.current;
-            if (current != null && current.type == EventType.Repaint)
+            if (narrow)
             {
-                Color fill = selected ? new Color(0.1f, 0.22f, 0.26f, 1f) : new Color(0.18f, 0.19f, 0.2f, 1f);
-                EditorGUI.DrawRect(cardRect, fill);
-                Rect swatch = new Rect(cardRect.x + 8f, cardRect.y + 8f, cardRect.width - 16f, 14f);
-                EditorGUI.DrawRect(swatch, definition.editorColor);
-                Texture preview = GetPreviewTexture(definition);
+                paletteCategoryIndex = GUILayout.Toolbar(
+                    paletteCategoryIndex,
+                    paletteCategoryLabels,
+                    GUILayout.Height(22f));
+                EditorGUILayout.BeginHorizontal(GUILayout.Height(22f));
+                EditorGUILayout.LabelField("Search", GUILayout.Width(44f));
+                paletteSearch = EditorGUILayout.TextField(paletteSearch);
+                EditorGUILayout.EndHorizontal();
+                return;
+            }
+
+            EditorGUILayout.BeginHorizontal(GUILayout.Height(26f));
+            paletteCategoryIndex = GUILayout.Toolbar(
+                paletteCategoryIndex,
+                paletteCategoryLabels,
+                GUILayout.Height(22f),
+                GUILayout.Width(availWidth * 0.62f));
+            EditorGUILayout.LabelField("Search", GUILayout.Width(44f));
+            paletteSearch = EditorGUILayout.TextField(paletteSearch);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawSizeStrip(float availWidth)
+        {
+            Rect stripRect = GUILayoutUtility.GetRect(
+                0f,
+                SizeStripHeight,
+                GUILayout.ExpandWidth(true),
+                GUILayout.Height(SizeStripHeight));
+            stripRect.width = availWidth;
+            if (Event.current.type == EventType.Repaint)
+            {
+                EditorGUI.DrawRect(stripRect, new Color(0.1f, 0.11f, 0.13f, 1f));
+                DrawBorder(stripRect, new Color(0.34f, 0.38f, 0.42f, 1f), 1f);
+            }
+
+            if (selectedCardKey < 0)
+            {
+                GUI.Label(stripRect, "Click a block card to pick a size. Drag any card to place its 1x block.", EditorStyles.wordWrappedMiniLabel);
+                return;
+            }
+
+            if (selectedCardKey >= StandaloneCardKeyOffset)
+            {
+                BlockDefinition standalone;
+                if (!activeCatalog.TryGetStandalone(selectedCardKey - StandaloneCardKeyOffset, out standalone))
+                {
+                    return;
+                }
+
+                if (IsStandaloneTable(standalone))
+                {
+                    DrawTableStrip(
+                        stripRect,
+                        standalone,
+                        new Color(0.72f, 0.48f, 0.28f, 1f),
+                        new Color(0.82f, 0.58f, 0.35f, 1f));
+                    return;
+                }
+
+                GUI.Label(stripRect, GetBlockLabel(standalone) + ": " + FormatFootprint(standalone.sizeInCells) + " only. Drag the card onto the matrix.", EditorStyles.wordWrappedMiniLabel);
+                return;
+            }
+
+            BlockFamilyDefinition family;
+            if (!activeCatalog.TryGetFamily(selectedCardKey, out family))
+            {
+                return;
+            }
+
+            if (family.foundationTable)
+            {
+                BlockDefinition tableDefinition;
+                if (TryResolveFamilyDefault(selectedCardKey, family, out tableDefinition))
+                {
+                    DrawTableStrip(stripRect, tableDefinition, family.xColor, family.zColor);
+                }
+
+                return;
+            }
+
+            if (family.GetHighestAssignedLength() <= 1)
+            {
+                GUI.Label(stripRect, family.familyName + ": 1x1 only. Drag the card onto the matrix.", EditorStyles.wordWrappedMiniLabel);
+                return;
+            }
+
+            DrawFamilyStrip(stripRect, selectedCardKey, family);
+        }
+
+        private void DrawFamilyStrip(Rect stripRect, int familyIndex, BlockFamilyDefinition family)
+        {
+            float innerWidth = stripRect.width - (StripPadding * 2f);
+            if (family.onlyVerticalAxis)
+            {
+                float verticalChipWidth = Mathf.Clamp((innerWidth - StripLabelWidth - (4f * StripChipGap)) / 5f, 16f, 64f);
+                DrawStripAxis(stripRect.x + StripPadding, stripRect.y + StripPadding, verticalChipWidth, familyIndex, family, 1);
+                return;
+            }
+
+            float half = (innerWidth - StripColumnGap) * 0.5f;
+            float chipWidth = Mathf.Max(16f, (half - StripLabelWidth - (4f * StripChipGap)) / 5f);
+            float rowOneY = stripRect.y + StripPadding;
+            float rowTwoY = rowOneY + FamilyChipHeight + StripRowGap;
+            float leftX = stripRect.x + StripPadding;
+            float rightX = leftX + half + StripColumnGap;
+            DrawStripAxis(leftX, rowOneY, chipWidth, familyIndex, family, 0);
+            DrawStripAxis(rightX, rowOneY, chipWidth, familyIndex, family, 1);
+            DrawStripAxis(leftX, rowTwoY, chipWidth, familyIndex, family, 2);
+        }
+
+        private void DrawStripAxis(float originX, float originY, float chipWidth, int familyIndex, BlockFamilyDefinition family, int axis)
+        {
+            Color rowColor = family.xColor;
+            string axisLabel = "x";
+            if (axis == 1)
+            {
+                rowColor = family.yColor;
+                axisLabel = "y";
+            }
+            else if (axis == 2)
+            {
+                rowColor = family.zColor;
+                axisLabel = "z";
+            }
+
+            if (Event.current.type == EventType.Repaint)
+            {
+                EditorGUI.DrawRect(new Rect(originX, originY + 4f, 4f, FamilyChipHeight - 8f), rowColor);
+                paletteIdStyle.normal.textColor = Color.white;
+                GUI.Label(new Rect(originX + 6f, originY, StripLabelWidth - 6f, FamilyChipHeight), axisLabel.ToUpperInvariant() + ":", paletteIdStyle);
+            }
+
+            for (int length = 1; length <= BlockFamilyDefinition.MaxLength; length++)
+            {
+                Rect chipRect = new Rect(
+                    originX + StripLabelWidth + ((length - 1) * (chipWidth + StripChipGap)),
+                    originY,
+                    chipWidth,
+                    FamilyChipHeight);
+                BlockDefinition definition = default;
+                bool available = length <= family.GetHighestAssignedLength()
+                    && activeCatalog.TryGetFamilyVariant(familyIndex, length, axis, out definition);
+
+                DrawFamilyChip(chipRect, length.ToString() + axisLabel, rowColor, available, definition);
+            }
+        }
+
+        private void DrawTableStrip(Rect stripRect, BlockDefinition definition, Color widthColor, Color depthColor)
+        {
+            float innerWidth = stripRect.width - (StripPadding * 2f);
+            float chipWidth = Mathf.Max(16f, (innerWidth - TableStripLabelWidth - (7f * StripChipGap)) / 8f);
+            float rowOneY = stripRect.y + StripPadding;
+            float rowTwoY = rowOneY + FamilyChipHeight + StripRowGap;
+            float originX = stripRect.x + StripPadding;
+            if (Event.current.type == EventType.Repaint)
+            {
+                paletteIdStyle.normal.textColor = Color.white;
+                GUI.Label(new Rect(originX, rowOneY, TableStripLabelWidth, FamilyChipHeight), "Width (X):", paletteIdStyle);
+                GUI.Label(new Rect(originX, rowTwoY, TableStripLabelWidth, FamilyChipHeight), "Depth (Z):", paletteIdStyle);
+            }
+
+            for (int width = 1; width <= 8; width++)
+            {
+                Rect chipRect = new Rect(
+                    originX + TableStripLabelWidth + ((width - 1) * (chipWidth + StripChipGap)),
+                    rowOneY,
+                    chipWidth,
+                    FamilyChipHeight);
+                bool selected = hasBrush
+                    && brushBlockId == definition.blockId
+                    && brushTableWidth == width;
+                DrawTableWidthChip(chipRect, width.ToString() + "x", widthColor, definition, width, selected);
+            }
+
+            for (int depth = 1; depth <= 4; depth++)
+            {
+                Rect chipRect = new Rect(
+                    originX + TableStripLabelWidth + ((depth - 1) * (chipWidth + StripChipGap)),
+                    rowTwoY,
+                    chipWidth,
+                    FamilyChipHeight);
+                bool selected = hasBrush
+                    && brushBlockId == definition.blockId
+                    && brushTableDepth == depth;
+                DrawTableDepthChip(chipRect, depth.ToString() + "z", depthColor, definition, depth, selected);
+            }
+        }
+
+        private void DrawPaletteGrid(float availWidth, float gridHeight)
+        {
+            BuildVisibleCardKeys();
+            float contentWidth = availWidth - GridScrollbarWidth;
+            paletteScroll = EditorGUILayout.BeginScrollView(
+                paletteScroll,
+                false,
+                true,
+                GUIStyle.none,
+                GUI.skin.verticalScrollbar,
+                GUI.skin.scrollView,
+                GUILayout.Height(gridHeight));
+
+            int cardCount = visibleCardKeys.Count;
+            if (cardCount == 0)
+            {
+                EditorGUILayout.LabelField("No blocks match the filter.", EditorStyles.miniLabel);
+                EditorGUILayout.EndScrollView();
+                return;
+            }
+
+            int columns = Mathf.Clamp((int)(contentWidth / PaletteCardMinWidth), 2, 5);
+            float cardWidth = (contentWidth - ((columns - 1) * PaletteCardGap)) / columns;
+            int rows = (cardCount + columns - 1) / columns;
+            float contentHeight = rows * (PaletteCardHeight + PaletteCardGap);
+            Rect contentRect = GUILayoutUtility.GetRect(
+                contentWidth,
+                contentHeight,
+                GUILayout.Width(contentWidth),
+                GUILayout.Height(contentHeight));
+
+            for (int i = 0; i < cardCount; i++)
+            {
+                int column = i % columns;
+                int row = i / columns;
+                Rect cardRect = new Rect(
+                    contentRect.x + (column * (cardWidth + PaletteCardGap)),
+                    contentRect.y + (row * (PaletteCardHeight + PaletteCardGap)),
+                    cardWidth,
+                    PaletteCardHeight);
+                DrawPaletteCard(cardRect, visibleCardKeys[i], gridHeight);
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void BuildVisibleCardKeys()
+        {
+            visibleCardKeys.Clear();
+            int familyCount = activeCatalog.FamilyCount;
+            for (int i = 0; i < familyCount; i++)
+            {
+                BlockFamilyDefinition family;
+                if (!activeCatalog.TryGetFamily(i, out family))
+                {
+                    continue;
+                }
+
+                if (PassesPaletteFilter(family.familyName, family.foundationTable, family.fragileProp, family.materialType))
+                {
+                    visibleCardKeys.Add(i);
+                }
+            }
+
+            int standaloneCount = activeCatalog.StandaloneCount;
+            for (int i = 0; i < standaloneCount; i++)
+            {
+                BlockDefinition definition;
+                if (!activeCatalog.TryGetStandalone(i, out definition))
+                {
+                    continue;
+                }
+
+                bool isJar = definition.shapeRole == BlockShapeRole.FragileProp
+                    || definition.shapeRole == BlockShapeRole.TopOrnament;
+                if (PassesPaletteFilter(definition.blockName, IsStandaloneTable(definition), isJar, definition.materialType))
+                {
+                    visibleCardKeys.Add(StandaloneCardKeyOffset + i);
+                }
+            }
+        }
+
+        private bool IsStandaloneTable(BlockDefinition definition)
+        {
+            return definition.shapeRole == BlockShapeRole.FoundationTable
+                || definition.materialType == BlockMaterialType.TableFoundation;
+        }
+
+        private bool PassesPaletteFilter(string name, bool isTable, bool isJarOrProp, BlockMaterialType materialType)
+        {
+            if (!string.IsNullOrEmpty(paletteSearch))
+            {
+                if (string.IsNullOrEmpty(name) || name.IndexOf(paletteSearch, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    return false;
+                }
+            }
+
+            if (paletteCategoryIndex <= 0)
+            {
+                return true;
+            }
+
+            string safeName = string.IsNullOrEmpty(name) ? string.Empty : name;
+            if (paletteCategoryIndex == 1)
+            {
+                return isTable || safeName.IndexOf("Table", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            if (paletteCategoryIndex == 2)
+            {
+                return safeName.IndexOf("Log", StringComparison.OrdinalIgnoreCase) >= 0
+                    || safeName.IndexOf("Wood", StringComparison.OrdinalIgnoreCase) >= 0
+                    || safeName.IndexOf("Snow", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            if (paletteCategoryIndex == 3)
+            {
+                return safeName.IndexOf("Can", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            if (paletteCategoryIndex == 4)
+            {
+                return safeName.IndexOf("Ice", StringComparison.OrdinalIgnoreCase) >= 0
+                    || safeName.IndexOf("Glass", StringComparison.OrdinalIgnoreCase) >= 0
+                    || materialType == BlockMaterialType.Glass;
+            }
+
+            if (paletteCategoryIndex == 5)
+            {
+                return safeName.IndexOf("Box", StringComparison.OrdinalIgnoreCase) >= 0
+                    || safeName.IndexOf("Stone", StringComparison.OrdinalIgnoreCase) >= 0
+                    || materialType == BlockMaterialType.Stone;
+            }
+
+            return isJarOrProp
+                || safeName.IndexOf("Jar", StringComparison.OrdinalIgnoreCase) >= 0
+                || safeName.IndexOf("Cone", StringComparison.OrdinalIgnoreCase) >= 0
+                || safeName.IndexOf("Ornament", StringComparison.OrdinalIgnoreCase) >= 0
+                || materialType == BlockMaterialType.CeramicJar;
+        }
+
+        private void DrawPaletteCard(Rect rect, int cardKey, float gridHeight)
+        {
+            BlockDefinition dragDefinition = default;
+            bool hasDragDefinition;
+            string title;
+            Texture preview;
+            Color stripeColor;
+            bool isTable;
+            if (cardKey >= StandaloneCardKeyOffset)
+            {
+                BlockDefinition standalone;
+                if (!activeCatalog.TryGetStandalone(cardKey - StandaloneCardKeyOffset, out standalone))
+                {
+                    return;
+                }
+
+                dragDefinition = standalone;
+                hasDragDefinition = true;
+                title = GetCardDisplayName(GetBlockLabel(standalone));
+                preview = GetPreviewTexture(standalone);
+                stripeColor = standalone.editorColor;
+                isTable = IsStandaloneTable(standalone);
+            }
+            else
+            {
+                BlockFamilyDefinition family;
+                if (!activeCatalog.TryGetFamily(cardKey, out family))
+                {
+                    return;
+                }
+
+                hasDragDefinition = TryResolveFamilyDefault(cardKey, family, out dragDefinition);
+                title = GetCardDisplayName(string.IsNullOrEmpty(family.familyName) ? "Family" : family.familyName);
+                preview = GetFamilyPreviewTexture(family);
+                stripeColor = family.xColor;
+                isTable = family.foundationTable;
+            }
+
+            int controlId = GUIUtility.GetControlID(FocusType.Passive);
+            Event current = Event.current;
+            EventType eventType = current.GetTypeForControl(controlId);
+
+            if (eventType == EventType.Repaint)
+            {
+                bool selected = cardKey == selectedCardKey;
+                EditorGUI.DrawRect(rect, selected ? new Color(0.2f, 0.26f, 0.31f, 1f) : new Color(0.17f, 0.18f, 0.2f, 1f));
+                DrawBorder(
+                    rect,
+                    selected ? new Color(0.4f, 0.95f, 1f, 1f) : new Color(0.34f, 0.38f, 0.42f, 1f),
+                    selected ? 2f : 1f);
+                EditorGUI.DrawRect(new Rect(rect.x, rect.y, 3f, rect.height), stripeColor);
+                Rect previewRect = new Rect(
+                    rect.x + 8f,
+                    rect.y + ((rect.height - PalettePreviewSize) * 0.5f),
+                    PalettePreviewSize,
+                    PalettePreviewSize);
                 if (preview != null)
                 {
-                    Rect previewRect = new Rect(cardRect.x + 28f, cardRect.y + 28f, 62f, 62f);
                     GUI.DrawTexture(previewRect, preview, ScaleMode.ScaleToFit);
                 }
 
                 paletteTitleStyle.normal.textColor = Color.white;
-                paletteIdStyle.normal.textColor = new Color(0.75f, 0.9f, 0.95f, 1f);
-                GUI.Label(new Rect(cardRect.x + 4f, cardRect.y + 94f, cardRect.width - 8f, 18f), GetBlockLabel(definition), paletteTitleStyle);
-                string cardId = "#" + definition.blockId.ToString() + "  " + FormatFootprint(blockFootprint.ClampSize(definition.sizeInCells));
-                GUI.Label(new Rect(cardRect.x + 4f, cardRect.y + 112f, cardRect.width - 8f, 16f), cardId, paletteIdStyle);
-                Color border = selected ? new Color(0.4f, 0.95f, 1f, 1f) : new Color(0.32f, 0.36f, 0.4f, 1f);
-                DrawBorder(cardRect, border, selected ? 2f : 1f);
+                GUI.Label(
+                    new Rect(previewRect.xMax + 4f, rect.y, rect.xMax - previewRect.xMax - 6f, rect.height),
+                    title,
+                    paletteTitleStyle);
+                return;
+            }
+
+            bool insideView = current.mousePosition.y >= paletteScroll.y
+                && current.mousePosition.y <= paletteScroll.y + gridHeight;
+            if (eventType == EventType.MouseDown
+                && current.button == 0
+                && insideView
+                && rect.Contains(current.mousePosition))
+            {
+                GUIUtility.hotControl = controlId;
+                paletteCardPressPosition = current.mousePosition;
+                current.Use();
+                return;
+            }
+
+            if (GUIUtility.hotControl != controlId)
+            {
+                return;
+            }
+
+            if (eventType == EventType.MouseDrag)
+            {
+                if ((current.mousePosition - paletteCardPressPosition).sqrMagnitude >= CardDragThresholdSqr)
+                {
+                    GUIUtility.hotControl = 0;
+                    if (hasDragDefinition)
+                    {
+                        BeginCardDrag(dragDefinition, isTable);
+                    }
+                }
+
+                current.Use();
+                return;
+            }
+
+            if (eventType != EventType.MouseUp)
+            {
+                return;
+            }
+
+            GUIUtility.hotControl = 0;
+            if (rect.Contains(current.mousePosition))
+            {
+                selectedCardKey = cardKey;
+                if (hasDragDefinition)
+                {
+                    SelectCardBrush(dragDefinition);
+                }
+            }
+
+            current.Use();
+            Repaint();
+        }
+
+        private string GetCardDisplayName(string blockName)
+        {
+            if (string.IsNullOrEmpty(blockName))
+            {
+                return "Block";
+            }
+
+            string trimmed = blockName;
+            if (trimmed.EndsWith("Cylinder", StringComparison.Ordinal) && trimmed.Length > "Cylinder".Length)
+            {
+                trimmed = trimmed.Substring(0, trimmed.Length - "Cylinder".Length);
+            }
+            else if (trimmed.EndsWith("Block", StringComparison.Ordinal) && trimmed.Length > "Block".Length)
+            {
+                trimmed = trimmed.Substring(0, trimmed.Length - "Block".Length);
+            }
+
+            return trimmed;
+        }
+
+        private bool TryResolveFamilyDefault(int familyIndex, BlockFamilyDefinition family, out BlockDefinition definition)
+        {
+            if (family.foundationTable && activeCatalog.TryGetFoundationTable(out definition))
+            {
+                return true;
+            }
+
+            return activeCatalog.TryGetFamilyVariant(familyIndex, 1, family.onlyVerticalAxis ? 1 : 0, out definition);
+        }
+
+        private void BeginCardDrag(BlockDefinition definition, bool isTable)
+        {
+            CancelMove();
+            hasBrush = true;
+            brushBlockId = definition.blockId;
+            string label = GetBlockLabel(definition);
+            if (isTable)
+            {
+                brushTableWidth = DefaultTableWidth;
+                brushTableDepth = DefaultTableDepth;
+                label = "Table " + DefaultTableWidth.ToString() + "x" + DefaultTableDepth.ToString();
+            }
+
+            statusMessage = "Brush: " + label + ". Drag it onto the matrix.";
+            dragPayload.Begin(definition.blockId, label);
+            Repaint();
+        }
+
+        private void SelectCardBrush(BlockDefinition definition)
+        {
+            CancelMove();
+            hasBrush = true;
+            brushBlockId = definition.blockId;
+            statusMessage = "Brush: " + GetBlockLabel(definition) + ". Drag it onto the matrix or click cells to paint.";
+        }
+
+        private void DrawTableWidthChip(
+            Rect chipRect,
+            string label,
+            Color rowColor,
+            BlockDefinition definition,
+            int width,
+            bool selected)
+        {
+            Event current = Event.current;
+            if (current != null && current.type == EventType.Repaint)
+            {
+                Color fill = selected ? Color.Lerp(rowColor, Color.white, 0.35f) : rowColor;
+                EditorGUI.DrawRect(chipRect, fill);
+                DrawBorder(chipRect, selected ? Color.white : new Color(0.1f, 0.1f, 0.1f, 0.6f), selected ? 2f : 1f);
+                paletteIdStyle.normal.textColor = GetReadableTextColor(fill);
+                GUI.Label(chipRect, label, paletteIdStyle);
             }
 
             if (current == null || current.type != EventType.MouseDown || current.button != 0)
@@ -1481,7 +2283,7 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            if (!cardRect.Contains(current.mousePosition))
+            if (!chipRect.Contains(current.mousePosition))
             {
                 return;
             }
@@ -1489,17 +2291,146 @@ namespace SmashFast.LevelEditor
             CancelMove();
             hasBrush = true;
             brushBlockId = definition.blockId;
-            statusMessage = "Brush: " + GetBlockLabel(definition) + ". Drag it onto the matrix or click cells to paint.";
+            brushTableWidth = width;
+            statusMessage = "Brush: Table "
+                + brushTableWidth.ToString()
+                + "x1x"
+                + brushTableDepth.ToString()
+                + ". Drag onto the matrix.";
+            dragPayload.Begin(definition.blockId, "Table " + brushTableWidth.ToString() + "x" + brushTableDepth.ToString());
+            current.Use();
+            Repaint();
+        }
+
+        private void DrawTableDepthChip(
+            Rect chipRect,
+            string label,
+            Color rowColor,
+            BlockDefinition definition,
+            int depth,
+            bool selected)
+        {
+            Event current = Event.current;
+            if (current != null && current.type == EventType.Repaint)
+            {
+                Color fill = selected ? Color.Lerp(rowColor, Color.white, 0.35f) : rowColor;
+                EditorGUI.DrawRect(chipRect, fill);
+                DrawBorder(chipRect, selected ? Color.white : new Color(0.1f, 0.1f, 0.1f, 0.6f), selected ? 2f : 1f);
+                paletteIdStyle.normal.textColor = GetReadableTextColor(fill);
+                GUI.Label(chipRect, label, paletteIdStyle);
+            }
+
+            if (current == null || current.type != EventType.MouseDown || current.button != 0)
+            {
+                return;
+            }
+
+            if (!chipRect.Contains(current.mousePosition))
+            {
+                return;
+            }
+
+            CancelMove();
+            hasBrush = true;
+            brushBlockId = definition.blockId;
+            brushTableDepth = depth;
+            statusMessage = "Brush: Table "
+                + brushTableWidth.ToString()
+                + "x1x"
+                + brushTableDepth.ToString()
+                + ". Drag onto the matrix.";
+            dragPayload.Begin(definition.blockId, "Table " + brushTableWidth.ToString() + "x" + brushTableDepth.ToString());
+            current.Use();
+            Repaint();
+        }
+
+        private Vector3Int ResolveBrushCustomSize(BlockDefinition definition)
+        {
+            if (definition.shapeRole == BlockShapeRole.FoundationTable
+                || definition.materialType == BlockMaterialType.TableFoundation)
+            {
+                return new Vector3Int(
+                    Mathf.Clamp(brushTableWidth, 1, 8),
+                    1,
+                    Mathf.Clamp(brushTableDepth, 1, 6));
+            }
+
+            return Vector3Int.zero;
+        }
+
+        private Texture GetFamilyPreviewTexture(BlockFamilyDefinition family)
+        {
+            if (family == null)
+            {
+                return null;
+            }
+
+            for (int length = 1; length <= BlockFamilyDefinition.MaxLength; length++)
+            {
+                GameObject prefab = family.GetLengthPrefab(length);
+                if (prefab == null)
+                {
+                    continue;
+                }
+
+                Texture preview = AssetPreview.GetAssetPreview(prefab);
+                if (preview == null)
+                {
+                    preview = AssetPreview.GetMiniThumbnail(prefab);
+                }
+
+                if (preview != null)
+                {
+                    return preview;
+                }
+            }
+
+            return null;
+        }
+
+        private void DrawFamilyChip(Rect chipRect, string label, Color rowColor, bool available, BlockDefinition definition)
+        {
+            Event current = Event.current;
+            bool selected = available && hasBrush && brushBlockId == definition.blockId;
+            if (current != null && current.type == EventType.Repaint)
+            {
+                Color fill = available ? rowColor : new Color(0.25f, 0.25f, 0.25f, 1f);
+                if (selected)
+                {
+                    fill = Color.Lerp(fill, Color.white, 0.35f);
+                }
+
+                EditorGUI.DrawRect(chipRect, fill);
+                DrawBorder(chipRect, selected ? Color.white : new Color(0.1f, 0.1f, 0.1f, 0.6f), selected ? 2f : 1f);
+                paletteIdStyle.normal.textColor = GetReadableTextColor(fill);
+                GUI.Label(chipRect, label, paletteIdStyle);
+            }
+
+            if (!available || current == null || current.type != EventType.MouseDown || current.button != 0)
+            {
+                return;
+            }
+
+            if (!chipRect.Contains(current.mousePosition))
+            {
+                return;
+            }
+
+            CancelMove();
+            hasBrush = true;
+            brushBlockId = definition.blockId;
+            statusMessage = "Brush: " + GetBlockLabel(definition) + ". Drag the chip onto the matrix.";
             dragPayload.Begin(definition.blockId, GetBlockLabel(definition));
             current.Use();
             Repaint();
         }
 
-        private void DrawFooter()
+        private void DrawStatusBar()
         {
-            string hoverText = hasHoveredCell ? ("Cell " + hoveredCell.x + ", " + hoveredCell.y + ", " + hoveredCell.z) : "No cell";
-            EditorGUILayout.LabelField(statusMessage + "   |   " + hoverText, EditorStyles.miniLabel);
-            EditorGUILayout.LabelField("No brush: drag a block to move it. R rotates the move. Green fits. Orange overwrites. Red is out of bounds.", EditorStyles.miniLabel);
+            string hoverText = hasHoveredCell
+                ? ("Cell " + hoveredCell.x + "," + hoveredCell.y + "," + hoveredCell.z)
+                : "No cell";
+            EditorGUILayout.LabelField(statusMessage + "  |  " + hoverText + "  |  R rotate  T axis", EditorStyles.miniLabel);
         }
 
         private void PaintCell(Vector3Int cell)
@@ -1522,7 +2453,9 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(definition.sizeInCells, brushRotationEuler);
+            Vector3Int customSize = ResolveBrushCustomSize(definition);
+            Vector3Int sizeInCells = customSize.x > 0 ? customSize : definition.sizeInCells;
+            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(sizeInCells, brushRotationEuler);
             PlacementValidationStatus status = activeLevel.ValidatePlacement(cell, effectiveSize, activeCatalog);
             if (status == PlacementValidationStatus.InvalidOutOfBounds)
             {
@@ -1535,7 +2468,10 @@ namespace SmashFast.LevelEditor
             }
 
             BlockPlacementData existing;
-            if (activeLevel.TryGetPlacement(cell, out existing) && existing.blockId == brushBlockId && existing.rotationEuler == brushRotationEuler)
+            if (activeLevel.TryGetPlacement(cell, out existing)
+                && existing.blockId == brushBlockId
+                && existing.rotationEuler == brushRotationEuler
+                && existing.customSize == customSize)
             {
                 lastEditedCell = cell;
                 hasLastEditedCell = true;
@@ -1543,11 +2479,11 @@ namespace SmashFast.LevelEditor
             }
 
             BeginLevelEdit("Paint Block");
-            RecordLevel();
             BlockPlacementData placement = new BlockPlacementData();
             placement.blockId = brushBlockId;
             placement.gridPosition = cell;
             placement.rotationEuler = brushRotationEuler;
+            placement.customSize = customSize;
             bool placed = activeLevel.PlaceBlock(placement, effectiveSize, activeCatalog);
             if (!placed)
             {
@@ -1556,7 +2492,6 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            EditorUtility.SetDirty(activeLevel);
             lastEditedCell = cell;
             hasLastEditedCell = true;
             statusMessage = "Placed " + GetBlockLabel(definition) + " " + FormatFootprint(effectiveSize) + " at " + cell.x + ", " + cell.y + ", " + cell.z + ".";
@@ -1584,9 +2519,7 @@ namespace SmashFast.LevelEditor
             }
 
             BeginLevelEdit("Erase Block");
-            RecordLevel();
             activeLevel.TryRemoveAt(placement.gridPosition);
-            EditorUtility.SetDirty(activeLevel);
             lastEditedCell = placement.gridPosition;
             hasLastEditedCell = true;
             if (isAnchorCell)
@@ -1667,13 +2600,10 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            Undo.IncrementCurrentGroup();
-            int group = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName(undoName);
-            Undo.RecordObject(activeLevel, undoName);
+            Undo.RecordObject(this, undoName);
             mutation();
-            EditorUtility.SetDirty(activeLevel);
-            Undo.CollapseUndoOperations(group);
+            jsonDirty = true;
+            EditorUtility.SetDirty(this);
             ClampActiveLayer();
             SyncPreview();
             Repaint();
@@ -1688,20 +2618,8 @@ namespace SmashFast.LevelEditor
             }
 
             undoGroupName = undoName;
-            Undo.IncrementCurrentGroup();
-            undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName(undoGroupName);
+            Undo.RecordObject(this, undoName);
             undoGroupOpen = true;
-        }
-
-        private void RecordLevel()
-        {
-            if (activeLevel == null)
-            {
-                return;
-            }
-
-            Undo.RecordObject(activeLevel, Undo.GetCurrentGroupName());
         }
 
         private void EndLevelEdit()
@@ -1711,9 +2629,77 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            Undo.SetCurrentGroupName(undoGroupName);
-            Undo.CollapseUndoOperations(undoGroup);
             undoGroupOpen = false;
+            jsonDirty = true;
+            EditorUtility.SetDirty(this);
+        }
+
+        private void MarkJsonDirtyAndAutosave()
+        {
+            jsonDirty = true;
+        }
+
+        private void PersistJson(bool forcePretty)
+        {
+            EnsureRepository();
+            if (activeLevel != null)
+            {
+                levelRepository.CaptureLevel(activeLevel);
+            }
+
+            jsonIo.Save(levelRepository, forcePretty);
+            jsonDirty = false;
+            if (levelDatabase != null)
+            {
+                levelDatabase.ReloadFromText(levelRepository.ToJson(false));
+            }
+        }
+
+        private void EnsureRepository()
+        {
+            if (levelRepository != null)
+            {
+                return;
+            }
+
+            levelDatabase = AssetDatabase.LoadAssetAtPath<LevelDatabaseSO>(LevelAssetPaths.LevelDatabasePath);
+            levelRepository = jsonIo.LoadOrCreateRepository();
+            if (levelDatabase != null)
+            {
+                levelDatabase.ReloadFromText(levelRepository.ToJson(false));
+            }
+        }
+
+        private void NavigateToLevel(int levelIndex)
+        {
+            EnsureRepository();
+            int clamped = levelIndex;
+            if (clamped < 1)
+            {
+                clamped = 1;
+            }
+
+            if (clamped > JsonLevelRepository.MaxLevelCount)
+            {
+                clamped = JsonLevelRepository.MaxLevelCount;
+            }
+
+            if (activeLevel != null && jsonDirty)
+            {
+                levelRepository.CaptureLevel(activeLevel);
+            }
+
+            editingLevelIndex = clamped;
+            jumpLevelField = clamped;
+            activeLevel = levelRepository.GetOrCreateLevelData(clamped);
+            hasLastEditedCell = false;
+            hasSelectedPlacement = false;
+            CancelMove();
+            ClampActiveLayer();
+            SaveAssetPrefs();
+            SyncPreview();
+            Repaint();
+            SceneView.RepaintAll();
         }
 
         private bool TryBeginMove(Vector3Int cell)
@@ -1764,7 +2750,8 @@ namespace SmashFast.LevelEditor
             }
 
             moveTargetAnchor = hovered - moveGrabOffset;
-            moveFootprintSize = blockFootprint.GetEffectiveSize(definition.sizeInCells, moveRotationEuler);
+            Vector3Int sizeInCells = activeLevel.GetSizeInCells(moveOriginPlacement, activeCatalog);
+            moveFootprintSize = blockFootprint.GetEffectiveSize(sizeInCells, moveRotationEuler);
             moveStatus = activeLevel.ValidatePlacementIgnoring(
                 moveTargetAnchor,
                 moveFootprintSize,
@@ -1893,18 +2880,78 @@ namespace SmashFast.LevelEditor
 
         private void EnsureLayerLabels(int layerCount)
         {
-            if (cachedLayerCount == layerCount && layerLabels != null && layerLabels.Length == layerCount)
+            if (layerLabels == null || layerLabels.Length != layerCount)
             {
-                return;
+                layerLabels = new string[layerCount];
             }
 
-            layerLabels = new string[layerCount];
             for (int i = 0; i < layerCount; i++)
             {
-                layerLabels[i] = "Layer " + i.ToString();
+                int blockCount = activeLevel != null ? activeLevel.CountLayer(i, activeCatalog) : 0;
+                layerLabels[i] = (position.width < NarrowPaletteWidth ? "L" : "Layer ") + i.ToString() + " (" + blockCount.ToString() + ")";
             }
 
             cachedLayerCount = layerCount;
+        }
+
+        private string FormatMatrixBlockLabel(string blockName, Vector3Int size, bool multiLine)
+        {
+            string shortName = GetShortBlockName(blockName);
+            string footprint = FormatFootprint(size);
+            if (multiLine)
+            {
+                return shortName + "\n" + footprint;
+            }
+
+            return shortName + " " + footprint;
+        }
+
+        private string GetShortBlockName(string blockName)
+        {
+            if (string.IsNullOrEmpty(blockName))
+            {
+                return "Block";
+            }
+
+            string trimmed = blockName;
+            int underscore = trimmed.LastIndexOf('_');
+            if (underscore > 0 && underscore < trimmed.Length - 1)
+            {
+                string suffix = trimmed.Substring(underscore + 1);
+                if (suffix.Length >= 2
+                    && suffix.Length <= 3
+                    && char.IsDigit(suffix[0])
+                    && (suffix[suffix.Length - 1] == 'x'
+                        || suffix[suffix.Length - 1] == 'y'
+                        || suffix[suffix.Length - 1] == 'z'
+                        || suffix[suffix.Length - 1] == 'X'
+                        || suffix[suffix.Length - 1] == 'Y'
+                        || suffix[suffix.Length - 1] == 'Z'))
+                {
+                    trimmed = trimmed.Substring(0, underscore);
+                }
+            }
+
+            if (trimmed.EndsWith("Cylinder", StringComparison.Ordinal))
+            {
+                trimmed = trimmed.Substring(0, trimmed.Length - "Cylinder".Length);
+            }
+            else if (trimmed.EndsWith("Block", StringComparison.Ordinal))
+            {
+                trimmed = trimmed.Substring(0, trimmed.Length - "Block".Length);
+            }
+
+            if (trimmed.Length > 10)
+            {
+                trimmed = trimmed.Substring(0, 8);
+            }
+
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return "Block";
+            }
+
+            return trimmed;
         }
 
         private void ClampActiveLayer()
@@ -2224,7 +3271,9 @@ namespace SmashFast.LevelEditor
             }
 
             footprintAnchor = previewAnchor;
-            footprintSize = blockFootprint.GetEffectiveSize(definition.sizeInCells, brushRotationEuler);
+            Vector3Int customSize = ResolveBrushCustomSize(definition);
+            Vector3Int sizeInCells = customSize.x > 0 ? customSize : definition.sizeInCells;
+            footprintSize = blockFootprint.GetEffectiveSize(sizeInCells, brushRotationEuler);
             footprintStatus = activeLevel.ValidatePlacement(footprintAnchor, footprintSize, activeCatalog);
             hasFootprintPreview = true;
         }
@@ -2316,6 +3365,17 @@ namespace SmashFast.LevelEditor
             moveGhost.target.blockId = moveOriginPlacement.blockId;
             moveGhost.target.gridPosition = moveTargetAnchor;
             moveGhost.target.rotationEuler = moveRotationEuler;
+            moveGhost.target.customSize = moveOriginPlacement.customSize;
+            Vector3Int ghostCustomSize = Vector3Int.zero;
+            if (showGhost && activeCatalog != null)
+            {
+                BlockDefinition ghostDefinition;
+                if (activeCatalog.TryGetBlockDefinition(ghostBlockId, out ghostDefinition))
+                {
+                    ghostCustomSize = ResolveBrushCustomSize(ghostDefinition);
+                }
+            }
+
             scenePreview.Bind(
                 activeLevel,
                 activeCatalog,
@@ -2324,6 +3384,7 @@ namespace SmashFast.LevelEditor
                 showGhost,
                 ghostBlockId,
                 brushRotationEuler,
+                ghostCustomSize,
                 hasExistingHover,
                 existingHoverPlacement,
                 overwritePlacements,
@@ -2333,21 +3394,20 @@ namespace SmashFast.LevelEditor
 
         private void RestoreAssets()
         {
-            if (activeLevel == null)
+            EnsureRepository();
+            activeCatalog = LoadCatalog();
+            if (activeCatalog != null)
             {
-                activeLevel = LoadAsset<LevelData>(EditorPrefs.GetString(LevelPrefKey, string.Empty));
+                activeCatalog.InvalidateRuntimeBlocks();
             }
 
-            if (activeLevel == null)
+            int savedIndex = EditorPrefs.GetInt(LevelPrefKey, 1);
+            if (savedIndex < 1)
             {
-                activeLevel = AssetDatabase.LoadAssetAtPath<LevelData>(LevelAssetPaths.LevelPath);
+                savedIndex = 1;
             }
 
-            if (!IsProjectAsset(activeCatalog))
-            {
-                activeCatalog = LoadCatalog();
-            }
-
+            NavigateToLevel(savedIndex);
             SaveAssetPrefs();
             ClampActiveLayer();
         }
@@ -2398,9 +3458,8 @@ namespace SmashFast.LevelEditor
 
         private void SaveAssetPrefs()
         {
-            string levelPath = activeLevel == null ? string.Empty : AssetDatabase.GetAssetPath(activeLevel);
+            EditorPrefs.SetInt(LevelPrefKey, editingLevelIndex);
             string catalogPath = activeCatalog == null ? string.Empty : AssetDatabase.GetAssetPath(activeCatalog);
-            EditorPrefs.SetString(LevelPrefKey, levelPath);
             EditorPrefs.SetString(CatalogPrefKey, catalogPath);
         }
 
@@ -2440,8 +3499,10 @@ namespace SmashFast.LevelEditor
             matrixLabelStyle.contentOffset = Vector2.zero;
 
             paletteTitleStyle = new GUIStyle(EditorStyles.miniBoldLabel);
-            paletteTitleStyle.alignment = TextAnchor.MiddleCenter;
+            paletteTitleStyle.alignment = TextAnchor.MiddleLeft;
+            paletteTitleStyle.fontSize = 11;
             paletteTitleStyle.clipping = TextClipping.Clip;
+            paletteTitleStyle.wordWrap = true;
 
             paletteIdStyle = new GUIStyle(EditorStyles.miniLabel);
             paletteIdStyle.alignment = TextAnchor.MiddleCenter;

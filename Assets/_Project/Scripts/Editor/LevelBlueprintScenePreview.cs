@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using SmashFast.Data;
+using SmashFast.Installers;
+using SmashFast.Level;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -17,10 +19,11 @@ namespace SmashFast.LevelEditor
 
     internal class LevelBlueprintScenePreview
     {
+        private const HideFlags PreviewHideFlags = HideFlags.HideAndDontSave;
         private readonly BlockFootprint blockFootprint = new BlockFootprint();
-        private readonly int baseColorId = Shader.PropertyToID("_BaseColor");
-        private readonly int colorId = Shader.PropertyToID("_Color");
         private readonly Vector3[] scratchVerts = new Vector3[4];
+        private readonly List<PreviewInstance> placedPreviews = new List<PreviewInstance>(64);
+        private readonly Dictionary<int, bool> prefabIsCompound = new Dictionary<int, bool>(16);
 
         private LevelData levelData;
         private BlockCatalogSO catalog;
@@ -28,6 +31,7 @@ namespace SmashFast.LevelEditor
         private Vector3Int hoveredCell;
         private bool showHoverGhost;
         private int hoverBlockId;
+        private Vector3Int hoverCustomSize;
         private Vector3 hoverRotationEuler;
         private bool hasExistingHover;
         private BlockPlacementData existingHoverPlacement;
@@ -35,14 +39,12 @@ namespace SmashFast.LevelEditor
         private int overwriteCount;
         private BlueprintMoveGhost moveGhost;
         private bool isEnabled;
-        private Material cachedBlueprintMaterial;
-        private bool materialHasBaseColor;
-        private bool materialHasColor;
-        private Dictionary<int, CachedBlockVisual> visualCache;
-        private int cachedCatalogId;
-        private Mesh fallbackCubeMesh;
-        private readonly Mesh[] emptyMeshes = new Mesh[0];
-        private readonly Matrix4x4[] emptyMatrices = new Matrix4x4[0];
+        private Transform previewRoot;
+        private GameSceneInstaller installer;
+        private readonly LevelGroundAnchor groundAnchorResolver = new LevelGroundAnchor();
+        private Vector3 groundAnchor;
+        private PreviewInstance hoverPreview;
+        private PreviewInstance movePreview;
 
         public void Bind(
             LevelData level,
@@ -52,22 +54,13 @@ namespace SmashFast.LevelEditor
             bool hoverGhostVisible,
             int ghostBlockId,
             Vector3 ghostRotationEuler,
+            Vector3Int ghostCustomSize,
             bool existingHoverVisible,
             BlockPlacementData existingPlacement,
             BlockPlacementData[] overwriteSource,
             int overwriteSourceCount,
             BlueprintMoveGhost movingGhost)
         {
-            int nextCatalogId = blockCatalog != null ? blockCatalog.GetInstanceID() : 0;
-            if (cachedCatalogId != nextCatalogId)
-            {
-                cachedCatalogId = nextCatalogId;
-                if (visualCache != null)
-                {
-                    visualCache.Clear();
-                }
-            }
-
             levelData = level;
             catalog = blockCatalog;
             selectedZLayer = layer;
@@ -75,6 +68,7 @@ namespace SmashFast.LevelEditor
             showHoverGhost = hoverGhostVisible;
             hoverBlockId = ghostBlockId;
             hoverRotationEuler = ghostRotationEuler;
+            hoverCustomSize = ghostCustomSize;
             hasExistingHover = existingHoverVisible;
             existingHoverPlacement = existingPlacement;
             moveGhost = movingGhost;
@@ -100,10 +94,7 @@ namespace SmashFast.LevelEditor
 
         public void ClearVisualCache()
         {
-            if (visualCache != null)
-            {
-                visualCache.Clear();
-            }
+            DestroyAllPreviews();
         }
 
         public void Enable()
@@ -113,7 +104,6 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            EnsureMaterial();
             SceneView.duringSceneGui += OnSceneGui;
             isEnabled = true;
         }
@@ -126,12 +116,7 @@ namespace SmashFast.LevelEditor
             }
 
             SceneView.duringSceneGui -= OnSceneGui;
-            DestroyMaterial();
-            if (visualCache != null)
-            {
-                visualCache.Clear();
-            }
-
+            DestroyAllPreviews();
             isEnabled = false;
         }
 
@@ -139,6 +124,7 @@ namespace SmashFast.LevelEditor
         {
             if (Application.isPlaying || levelData == null)
             {
+                DestroyAllPreviews();
                 return;
             }
 
@@ -154,16 +140,19 @@ namespace SmashFast.LevelEditor
             Matrix4x4 previousMatrix = Handles.matrix;
             try
             {
+                ResolveGroundAnchor();
+                EnsurePreviewRoot();
+                previewRoot.position = groundAnchor;
                 Handles.lighting = false;
                 Handles.zTest = CompareFunction.LessEqual;
-                Handles.matrix = Matrix4x4.identity;
+                Handles.matrix = Matrix4x4.Translate(groundAnchor);
                 DrawVolume(levelData);
                 DrawFloorGrid(levelData);
                 DrawActiveLayerGuides(levelData);
-                DrawPlacements(false);
-                DrawPlacements(true);
-                DrawHoverGhost(levelData);
-                DrawMoveTarget(levelData);
+                SyncPlacedPreviews();
+                DrawPlacementWires();
+                SyncHoverPreview();
+                SyncMovePreview();
                 DrawHoveredEntities(levelData);
             }
             finally
@@ -175,14 +164,302 @@ namespace SmashFast.LevelEditor
             }
         }
 
+        private void ResolveGroundAnchor()
+        {
+            if (installer == null)
+            {
+                installer = Object.FindFirstObjectByType<GameSceneInstaller>();
+            }
+
+            groundAnchor = installer != null ? groundAnchorResolver.Resolve(installer.GroundCollider) : Vector3.zero;
+        }
+
+        private void SyncPlacedPreviews()
+        {
+            EnsurePreviewRoot();
+            int count = levelData.PlacementCount;
+            EnsurePlacedCapacity(count);
+            for (int i = 0; i < count; i++)
+            {
+                BlockPlacementData placement;
+                if (!levelData.TryGetPlacementByIndex(i, out placement))
+                {
+                    SetPreviewActive(placedPreviews[i], false);
+                    continue;
+                }
+
+                bool isMoveOrigin = moveGhost.showOrigin && placement.gridPosition == moveGhost.origin.gridPosition;
+                if (isMoveOrigin)
+                {
+                    SetPreviewActive(placedPreviews[i], false);
+                    DrawOriginWire(placement);
+                    continue;
+                }
+
+                SyncPreview(placedPreviews[i], placement, true);
+            }
+
+            for (int i = count; i < placedPreviews.Count; i++)
+            {
+                SetPreviewActive(placedPreviews[i], false);
+            }
+        }
+
+        private void SyncHoverPreview()
+        {
+            if (!showHoverGhost || catalog == null)
+            {
+                SetPreviewActive(hoverPreview, false);
+                return;
+            }
+
+            BlockDefinition definition;
+            if (!catalog.TryGetBlockDefinition(hoverBlockId, out definition) || definition.prefab == null)
+            {
+                SetPreviewActive(hoverPreview, false);
+                return;
+            }
+
+            if (hoverPreview == null)
+            {
+                hoverPreview = new PreviewInstance();
+            }
+
+            BlockPlacementData ghostPlacement = new BlockPlacementData();
+            ghostPlacement.blockId = hoverBlockId;
+            ghostPlacement.gridPosition = hoveredCell;
+            ghostPlacement.rotationEuler = hoverRotationEuler;
+            ghostPlacement.customSize = hoverCustomSize;
+            SyncPreview(hoverPreview, ghostPlacement, true);
+
+            Vector3Int sizeInCells = levelData.GetSizeInCells(ghostPlacement, catalog);
+            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(sizeInCells, hoverRotationEuler);
+            PlacementValidationStatus status = levelData.ValidatePlacement(hoveredCell, effectiveSize, catalog);
+            DrawFootprintWire(levelData, ghostPlacement, ColorForStatus(status));
+        }
+
+        private void SyncMovePreview()
+        {
+            if (!moveGhost.showTarget || catalog == null)
+            {
+                SetPreviewActive(movePreview, false);
+                return;
+            }
+
+            BlockDefinition definition;
+            if (!catalog.TryGetBlockDefinition(moveGhost.target.blockId, out definition) || definition.prefab == null)
+            {
+                SetPreviewActive(movePreview, false);
+                return;
+            }
+
+            if (movePreview == null)
+            {
+                movePreview = new PreviewInstance();
+            }
+
+            SyncPreview(movePreview, moveGhost.target, true);
+            DrawFootprintWire(levelData, moveGhost.target, ColorForStatus(moveGhost.status));
+        }
+
+        private void SyncPreview(PreviewInstance preview, BlockPlacementData placement, bool active)
+        {
+            if (!active || catalog == null)
+            {
+                SetPreviewActive(preview, false);
+                return;
+            }
+
+            BlockDefinition definition;
+            if (!catalog.TryGetBlockDefinition(placement.blockId, out definition) || definition.prefab == null)
+            {
+                SetPreviewActive(preview, false);
+                return;
+            }
+
+            EnsurePreviewRoot();
+            int prefabId = definition.prefab.GetInstanceID();
+            if (preview.instance == null || preview.prefabId != prefabId)
+            {
+                DestroyPreviewInstance(preview);
+                preview.instance = CreatePreviewInstance(definition.prefab);
+                preview.prefabId = prefabId;
+                preview.blockId = definition.blockId;
+            }
+
+            Vector3Int sizeInCells = levelData.GetSizeInCells(placement, catalog);
+            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(sizeInCells, placement.rotationEuler);
+            Vector3 worldPos;
+            Quaternion worldRot;
+            levelData.GetWorldPose(placement, effectiveSize, catalog, 0f, out worldPos, out worldRot);
+            worldRot = worldRot * Quaternion.Euler(definition.meshEuler);
+            Vector3 scale = ResolveTargetScale(definition, sizeInCells);
+            Transform transform = preview.instance.transform;
+            transform.SetLocalPositionAndRotation(worldPos, worldRot);
+            preview.blockId = definition.blockId;
+            SpawnedBlock spawnedBlock = preview.instance.GetComponent<SpawnedBlock>();
+            if (spawnedBlock != null)
+            {
+                spawnedBlock.ApplyEditorPreviewVisuals(scale, catalog.GetScale(), catalog.GetTableHeightFactor(levelData.CellSize.y), sizeInCells);
+            }
+            else
+            {
+                transform.localScale = Vector3.Scale(scale, Vector3.one * catalog.GetScale());
+            }
+
+            if (!preview.instance.activeSelf)
+            {
+                preview.instance.SetActive(true);
+            }
+        }
+
+        private GameObject CreatePreviewInstance(GameObject prefab)
+        {
+            GameObject instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+            if (instance == null)
+            {
+                instance = Object.Instantiate(prefab);
+            }
+
+            instance.name = "BlueprintPreview_" + prefab.name;
+            instance.hideFlags = PreviewHideFlags;
+            instance.transform.SetParent(previewRoot, false);
+            PreparePreviewInstance(instance);
+            return instance;
+        }
+
+        private static void PreparePreviewInstance(GameObject instance)
+        {
+            Transform[] transforms = instance.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                transforms[i].gameObject.hideFlags = PreviewHideFlags;
+            }
+
+            SpawnedBlock spawnedBlock = instance.GetComponent<SpawnedBlock>();
+            if (spawnedBlock != null)
+            {
+                spawnedBlock.ApplyEditorPreviewVisuals();
+            }
+
+            Rigidbody[] bodies = instance.GetComponentsInChildren<Rigidbody>(true);
+            for (int i = 0; i < bodies.Length; i++)
+            {
+                bodies[i].detectCollisions = false;
+                bodies[i].isKinematic = true;
+                bodies[i].useGravity = false;
+            }
+
+            Collider[] colliders = instance.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                colliders[i].enabled = false;
+            }
+
+            MonoBehaviour[] behaviours = instance.GetComponentsInChildren<MonoBehaviour>(true);
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                behaviours[i].enabled = false;
+            }
+        }
+
+        private Vector3 ResolveTargetScale(BlockDefinition definition, Vector3Int sizeInCells)
+        {
+            bool foundationTable = definition.shapeRole == BlockShapeRole.FoundationTable
+                || definition.materialType == BlockMaterialType.TableFoundation;
+            if (foundationTable)
+            {
+                return Vector3.one;
+            }
+
+            if (IsCompoundPrefab(definition.prefab))
+            {
+                return levelData.GetCellWorldScale(definition.baseScale);
+            }
+
+            return levelData.GetFootprintWorldScale(definition.baseScale, sizeInCells);
+        }
+
+        private bool IsCompoundPrefab(GameObject prefab)
+        {
+            int prefabId = prefab.GetInstanceID();
+            bool isCompound;
+            if (prefabIsCompound.TryGetValue(prefabId, out isCompound))
+            {
+                return isCompound;
+            }
+
+            MeshFilter[] filters = prefab.GetComponentsInChildren<MeshFilter>(true);
+            int meshCount = 0;
+            for (int i = 0; i < filters.Length; i++)
+            {
+                if (filters[i] != null && filters[i].sharedMesh != null)
+                {
+                    meshCount++;
+                }
+            }
+
+            isCompound = meshCount > 1;
+            prefabIsCompound.Add(prefabId, isCompound);
+            return isCompound;
+        }
+
+        private void DrawPlacementWires()
+        {
+            int count = levelData.PlacementCount;
+            for (int i = 0; i < count; i++)
+            {
+                BlockPlacementData placement;
+                if (!levelData.TryGetPlacementByIndex(i, out placement))
+                {
+                    continue;
+                }
+
+                if (moveGhost.showOrigin && placement.gridPosition == moveGhost.origin.gridPosition)
+                {
+                    continue;
+                }
+
+                BlockDefinition definition = default;
+                bool hasDefinition = catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition);
+                Color editorColor = hasDefinition ? definition.editorColor : new Color(0.75f, 0.75f, 0.75f, 1f);
+                Vector3Int occupiedSize = levelData.GetEffectiveSize(placement, catalog);
+                int minLayer = placement.gridPosition.z;
+                int maxLayer = minLayer + occupiedSize.z - 1;
+                bool isActive = selectedZLayer >= minLayer && selectedZLayer <= maxLayer;
+                editorColor.a = isActive ? 0.85f : 0.25f;
+                DrawFootprintWire(levelData, placement, editorColor);
+            }
+        }
+
+        private void DrawOriginWire(BlockPlacementData placement)
+        {
+            DrawDottedWireCube(
+                GetFootprintMatrix(placement),
+                new Color(0.85f, 0.9f, 0.95f, 0.9f));
+        }
+
+        private Matrix4x4 GetFootprintMatrix(BlockPlacementData placement)
+        {
+            Vector3 baseScale = Vector3.one;
+            Vector3Int sizeInCells = levelData.GetSizeInCells(placement, catalog);
+            BlockDefinition definition;
+            if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition))
+            {
+                baseScale = definition.baseScale;
+            }
+
+            return levelData.GetWorldMatrix(placement, baseScale, sizeInCells, catalog);
+        }
+
         private void DrawVolume(LevelData level)
         {
             Vector3Int dimensions = level.GridDimensions;
-            Vector3 cell = level.CellSize;
-            Vector3 size = new Vector3(dimensions.x * cell.x, dimensions.y * cell.y, dimensions.z * cell.z);
+            Vector3 cell = level.GetScaledCellSize(catalog);
+            Vector3 size = new Vector3(dimensions.x * cell.x, (dimensions.y * cell.y) + level.GetTableLift(catalog), dimensions.z * cell.z);
             Vector3 center = level.OriginOffset + (size * 0.5f) + level.GetHorizontalCenterShift(catalog);
             Color frameColor = new Color(0.45f, 0.9f, 1f, 0.35f);
-            using (new Handles.DrawingScope(frameColor, Matrix4x4.TRS(center, Quaternion.identity, size)))
+            using (new Handles.DrawingScope(frameColor, Matrix4x4.Translate(groundAnchor) * Matrix4x4.TRS(center, Quaternion.identity, size)))
             {
                 Handles.DrawWireCube(Vector3.zero, Vector3.one);
             }
@@ -191,7 +468,7 @@ namespace SmashFast.LevelEditor
         private void DrawFloorGrid(LevelData level)
         {
             Vector3Int dimensions = level.GridDimensions;
-            Vector3 cell = level.CellSize;
+            Vector3 cell = level.GetScaledCellSize(catalog);
             Vector3 origin = level.OriginOffset + level.GetHorizontalCenterShift(catalog);
             Handles.color = new Color(0.3f, 0.86f, 0.95f, 0.9f);
             for (int x = 0; x <= dimensions.x; x++)
@@ -233,12 +510,12 @@ namespace SmashFast.LevelEditor
                 layer = dimensions.z - 1;
             }
 
-            Vector3 cell = level.CellSize;
+            Vector3 cell = level.GetScaledCellSize(catalog);
             Vector3 origin = level.OriginOffset + level.GetHorizontalCenterShift(catalog);
             float x0 = origin.x;
             float x1 = origin.x + (dimensions.x * cell.x);
             float y0 = origin.y;
-            float y1 = origin.y + (dimensions.y * cell.y);
+            float y1 = origin.y + (dimensions.y * cell.y) + level.GetTableLift(catalog);
             float z0 = origin.z + (layer * cell.z);
             float z1 = z0 + cell.z;
             float groundY = origin.y + 0.02f;
@@ -261,166 +538,6 @@ namespace SmashFast.LevelEditor
                 new Color(0.6f, 1f, 1f, 0.22f));
             Handles.color = new Color(0.75f, 1f, 1f, 0.95f);
             Handles.Label(new Vector3(x0, y1 + (cell.y * 0.15f), sliceZ), "Layer " + layer.ToString());
-        }
-
-        private void DrawPlacements(bool activeOnly)
-        {
-            int count = levelData.PlacementCount;
-            for (int i = 0; i < count; i++)
-            {
-                BlockPlacementData placement;
-                if (!levelData.TryGetPlacementByIndex(i, out placement))
-                {
-                    continue;
-                }
-
-                Vector3Int occupiedSize = levelData.GetEffectiveSize(placement, catalog);
-                int minLayer = placement.gridPosition.z;
-                int maxLayer = minLayer + occupiedSize.z - 1;
-                bool isActive = selectedZLayer >= minLayer && selectedZLayer <= maxLayer;
-                if (isActive != activeOnly)
-                {
-                    continue;
-                }
-
-                DrawPlacement(placement, isActive);
-            }
-        }
-
-        private void DrawPlacement(BlockPlacementData placement, bool isActive)
-        {
-            BlockDefinition definition = default;
-            bool hasDefinition = catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition);
-            Color editorColor = hasDefinition ? definition.editorColor : new Color(0.75f, 0.75f, 0.75f, 1f);
-            if (editorColor.a <= 0f)
-            {
-                editorColor.a = 1f;
-            }
-
-            Vector3 baseScale = hasDefinition ? definition.baseScale : Vector3.one;
-            Vector3Int sizeInCells = hasDefinition ? definition.sizeInCells : Vector3Int.one;
-            Matrix4x4 footprintMatrix = levelData.GetWorldMatrix(placement, baseScale, sizeInCells, catalog);
-            Color ghostColor = BuildGhostColor(editorColor, isActive);
-            Color wireColor = editorColor;
-            wireColor.a = isActive ? 1f : 0.28f;
-            bool isMoveOrigin = moveGhost.showOrigin && placement.gridPosition == moveGhost.origin.gridPosition;
-            CachedBlockVisual visual = GetVisual(placement.blockId, definition, hasDefinition);
-            Matrix4x4 blockWorldMatrix = GetBlockWorldMatrix(levelData, placement.gridPosition, placement.rotationEuler, baseScale, sizeInCells, visual);
-            if (isMoveOrigin)
-            {
-                ghostColor.a = 0.16f;
-                DrawVisual(visual, blockWorldMatrix, ghostColor);
-                DrawDottedWireCube(footprintMatrix, new Color(0.85f, 0.9f, 0.95f, 0.9f));
-                return;
-            }
-
-            DrawVisual(visual, blockWorldMatrix, ghostColor);
-
-            using (new Handles.DrawingScope(wireColor, footprintMatrix))
-            {
-                Handles.DrawWireCube(Vector3.zero, Vector3.one);
-            }
-        }
-
-        private void DrawMoveTarget(LevelData level)
-        {
-            if (!moveGhost.showTarget || catalog == null)
-            {
-                return;
-            }
-
-            BlockDefinition definition;
-            if (!catalog.TryGetBlockDefinition(moveGhost.target.blockId, out definition))
-            {
-                return;
-            }
-
-            Color ghostColor = ColorForStatus(moveGhost.status);
-            Matrix4x4 footprintMatrix = level.GetWorldMatrix(moveGhost.target, definition.baseScale, definition.sizeInCells, catalog);
-            CachedBlockVisual visual = GetVisual(moveGhost.target.blockId, definition, true);
-            Matrix4x4 blockWorldMatrix = GetBlockWorldMatrix(
-                level,
-                moveGhost.target.gridPosition,
-                moveGhost.target.rotationEuler,
-                definition.baseScale,
-                definition.sizeInCells,
-                visual);
-            CompareFunction previousTest = Handles.zTest;
-            Handles.zTest = CompareFunction.Always;
-            DrawVisual(visual, blockWorldMatrix, ghostColor);
-            using (new Handles.DrawingScope(ghostColor, footprintMatrix))
-            {
-                Handles.DrawWireCube(Vector3.zero, Vector3.one);
-            }
-
-            Handles.zTest = previousTest;
-        }
-
-        private void DrawDottedWireCube(Matrix4x4 matrix, Color wireColor)
-        {
-            Vector3 half = new Vector3(0.5f, 0.5f, 0.5f);
-            Vector3 x = new Vector3(half.x, 0f, 0f);
-            Vector3 y = new Vector3(0f, half.y, 0f);
-            Vector3 z = new Vector3(0f, 0f, half.z);
-            Vector3 origin = Vector3.zero;
-            CompareFunction previousTest = Handles.zTest;
-            Handles.zTest = CompareFunction.Always;
-            using (new Handles.DrawingScope(wireColor, matrix))
-            {
-                DrawDottedEdge(origin - x - y - z, origin + x - y - z);
-                DrawDottedEdge(origin - x + y - z, origin + x + y - z);
-                DrawDottedEdge(origin - x - y + z, origin + x - y + z);
-                DrawDottedEdge(origin - x + y + z, origin + x + y + z);
-                DrawDottedEdge(origin - x - y - z, origin - x + y - z);
-                DrawDottedEdge(origin + x - y - z, origin + x + y - z);
-                DrawDottedEdge(origin - x - y + z, origin - x + y + z);
-                DrawDottedEdge(origin + x - y + z, origin + x + y + z);
-                DrawDottedEdge(origin - x - y - z, origin - x - y + z);
-                DrawDottedEdge(origin + x - y - z, origin + x - y + z);
-                DrawDottedEdge(origin - x + y - z, origin - x + y + z);
-                DrawDottedEdge(origin + x + y - z, origin + x + y + z);
-            }
-
-            Handles.zTest = previousTest;
-        }
-
-        private void DrawDottedEdge(Vector3 start, Vector3 end)
-        {
-            Handles.DrawDottedLine(start, end, 4f);
-        }
-
-        private void DrawHoverGhost(LevelData level)
-        {
-            if (!showHoverGhost || catalog == null)
-            {
-                return;
-            }
-
-            BlockDefinition definition;
-            if (!catalog.TryGetBlockDefinition(hoverBlockId, out definition))
-            {
-                return;
-            }
-
-            BlockPlacementData ghostPlacement = new BlockPlacementData();
-            ghostPlacement.blockId = hoverBlockId;
-            ghostPlacement.gridPosition = hoveredCell;
-            ghostPlacement.rotationEuler = hoverRotationEuler;
-            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(definition.sizeInCells, hoverRotationEuler);
-            PlacementValidationStatus status = level.ValidatePlacement(hoveredCell, effectiveSize, catalog);
-            Color ghostColor = ColorForStatus(status);
-            Matrix4x4 footprintMatrix = level.GetWorldMatrix(ghostPlacement, definition.baseScale, definition.sizeInCells, catalog);
-            CachedBlockVisual visual = GetVisual(hoverBlockId, definition, true);
-            Matrix4x4 blockWorldMatrix = GetBlockWorldMatrix(level, hoveredCell, hoverRotationEuler, definition.baseScale, definition.sizeInCells, visual);
-            CompareFunction previousTest = Handles.zTest;
-            Handles.zTest = CompareFunction.Always;
-            DrawVisual(visual, blockWorldMatrix, ghostColor);
-            using (new Handles.DrawingScope(ghostColor, footprintMatrix))
-            {
-                Handles.DrawWireCube(Vector3.zero, Vector3.one);
-            }
-
-            Handles.zTest = previousTest;
         }
 
         private void DrawHoveredEntities(LevelData level)
@@ -448,19 +565,50 @@ namespace SmashFast.LevelEditor
         private void DrawFootprintWire(LevelData level, BlockPlacementData placement, Color wireColor)
         {
             Vector3 baseScale = Vector3.one;
-            Vector3Int sizeInCells = Vector3Int.one;
+            Vector3Int sizeInCells = level.GetSizeInCells(placement, catalog);
             BlockDefinition definition;
             if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition))
             {
                 baseScale = definition.baseScale;
-                sizeInCells = definition.sizeInCells;
             }
 
             Matrix4x4 matrix = level.GetWorldMatrix(placement, baseScale, sizeInCells, catalog);
-            using (new Handles.DrawingScope(wireColor, matrix))
+            CompareFunction previousTest = Handles.zTest;
+            Handles.zTest = CompareFunction.Always;
+            using (new Handles.DrawingScope(wireColor, Matrix4x4.Translate(groundAnchor) * matrix))
             {
                 Handles.DrawWireCube(Vector3.zero, Vector3.one);
             }
+
+            Handles.zTest = previousTest;
+        }
+
+        private void DrawDottedWireCube(Matrix4x4 matrix, Color wireColor)
+        {
+            Vector3 half = new Vector3(0.5f, 0.5f, 0.5f);
+            Vector3 x = new Vector3(half.x, 0f, 0f);
+            Vector3 y = new Vector3(0f, half.y, 0f);
+            Vector3 z = new Vector3(0f, 0f, half.z);
+            Vector3 origin = Vector3.zero;
+            CompareFunction previousTest = Handles.zTest;
+            Handles.zTest = CompareFunction.Always;
+            using (new Handles.DrawingScope(wireColor, Matrix4x4.Translate(groundAnchor) * matrix))
+            {
+                Handles.DrawDottedLine(origin - x - y - z, origin + x - y - z, 4f);
+                Handles.DrawDottedLine(origin - x + y - z, origin + x + y - z, 4f);
+                Handles.DrawDottedLine(origin - x - y + z, origin + x - y + z, 4f);
+                Handles.DrawDottedLine(origin - x + y + z, origin + x + y + z, 4f);
+                Handles.DrawDottedLine(origin - x - y - z, origin - x + y - z, 4f);
+                Handles.DrawDottedLine(origin + x - y - z, origin + x + y - z, 4f);
+                Handles.DrawDottedLine(origin - x - y + z, origin - x + y + z, 4f);
+                Handles.DrawDottedLine(origin + x - y + z, origin + x + y + z, 4f);
+                Handles.DrawDottedLine(origin - x - y - z, origin - x - y + z, 4f);
+                Handles.DrawDottedLine(origin + x - y - z, origin + x - y + z, 4f);
+                Handles.DrawDottedLine(origin - x + y - z, origin - x + y + z, 4f);
+                Handles.DrawDottedLine(origin + x + y - z, origin + x + y + z, 4f);
+            }
+
+            Handles.zTest = previousTest;
         }
 
         private bool ContainsOverwriteAnchor(Vector3Int anchor)
@@ -474,30 +622,6 @@ namespace SmashFast.LevelEditor
             }
 
             return false;
-        }
-
-        private Matrix4x4 GetBlockWorldMatrix(
-            LevelData level,
-            Vector3Int anchor,
-            Vector3 rotationEuler,
-            Vector3 baseScale,
-            Vector3Int sizeInCells,
-            CachedBlockVisual visual)
-        {
-            BlockPlacementData placement = new BlockPlacementData();
-            placement.gridPosition = anchor;
-            placement.rotationEuler = rotationEuler;
-            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(sizeInCells, rotationEuler);
-            Vector3 worldPos;
-            Quaternion worldRot;
-            level.GetWorldPose(placement, effectiveSize, catalog, 0f, out worldPos, out worldRot);
-            Vector3 scale = level.GetFootprintWorldScale(baseScale, sizeInCells);
-            if (visual != null && visual.usesPrefabParts)
-            {
-                scale = level.GetCellWorldScale(baseScale);
-            }
-
-            return Matrix4x4.TRS(worldPos, worldRot, scale);
         }
 
         private Color ColorForStatus(PlacementValidationStatus status)
@@ -515,285 +639,78 @@ namespace SmashFast.LevelEditor
             return new Color(1f, 0.22f, 0.18f, 0.95f);
         }
 
-        private void DrawVisual(CachedBlockVisual visual, Matrix4x4 blockWorldMatrix, Color ghostColor)
+        private void EnsurePreviewRoot()
         {
-            EnsureMaterial();
-            if (cachedBlueprintMaterial == null || visual == null || visual.partCount <= 0)
+            if (previewRoot != null)
             {
                 return;
             }
 
-            if (materialHasBaseColor)
-            {
-                cachedBlueprintMaterial.SetColor(baseColorId, ghostColor);
-            }
+            GameObject root = new GameObject("SmashFast_BlueprintPreviewRoot");
+            root.hideFlags = PreviewHideFlags;
+            previewRoot = root.transform;
+        }
 
-            if (materialHasColor)
+        private void EnsurePlacedCapacity(int count)
+        {
+            while (placedPreviews.Count < count)
             {
-                cachedBlueprintMaterial.SetColor(colorId, ghostColor);
+                placedPreviews.Add(new PreviewInstance());
             }
+        }
 
-            if (!cachedBlueprintMaterial.SetPass(0))
+        private static void SetPreviewActive(PreviewInstance preview, bool active)
+        {
+            if (preview == null || preview.instance == null)
             {
                 return;
             }
 
-            int partCount = visual.partCount;
-            Mesh[] meshes = visual.meshes;
-            Matrix4x4[] localMatrices = visual.localMatrices;
-            for (int i = 0; i < partCount; i++)
+            if (preview.instance.activeSelf != active)
             {
-                Mesh mesh = meshes[i];
-                if (mesh == null)
-                {
-                    continue;
-                }
-
-                Graphics.DrawMeshNow(mesh, blockWorldMatrix * localMatrices[i]);
+                preview.instance.SetActive(active);
             }
         }
 
-        private CachedBlockVisual GetVisual(int blockId, BlockDefinition definition, bool hasDefinition)
+        private void DestroyAllPreviews()
         {
-            if (visualCache == null)
+            for (int i = 0; i < placedPreviews.Count; i++)
             {
-                visualCache = new Dictionary<int, CachedBlockVisual>(16);
+                DestroyPreviewInstance(placedPreviews[i]);
             }
 
-            int prefabId = 0;
-            int previewId = 0;
-            if (hasDefinition && definition.prefab != null)
+            placedPreviews.Clear();
+            DestroyPreviewInstance(hoverPreview);
+            hoverPreview = null;
+            DestroyPreviewInstance(movePreview);
+            movePreview = null;
+            if (previewRoot != null)
             {
-                prefabId = definition.prefab.GetInstanceID();
+                Object.DestroyImmediate(previewRoot.gameObject);
+                previewRoot = null;
             }
 
-            if (hasDefinition && definition.previewMesh != null)
-            {
-                previewId = definition.previewMesh.GetInstanceID();
-            }
-
-            CachedBlockVisual cached;
-            if (visualCache.TryGetValue(blockId, out cached))
-            {
-                if (cached.prefabId == prefabId && cached.previewMeshId == previewId)
-                {
-                    return cached;
-                }
-            }
-
-            CachedBlockVisual created = BuildVisual(definition, hasDefinition, prefabId, previewId);
-            visualCache[blockId] = created;
-            return created;
+            prefabIsCompound.Clear();
         }
 
-        private CachedBlockVisual BuildVisual(BlockDefinition definition, bool hasDefinition, int prefabId, int previewId)
+        private static void DestroyPreviewInstance(PreviewInstance preview)
         {
-            CachedBlockVisual visual = new CachedBlockVisual();
-            visual.prefabId = prefabId;
-            visual.previewMeshId = previewId;
-            if (hasDefinition && definition.prefab != null && TryBuildPrefabParts(definition.prefab, visual))
-            {
-                return visual;
-            }
-
-            Mesh fallback = null;
-            if (hasDefinition)
-            {
-                fallback = definition.previewMesh;
-            }
-
-            if (fallback == null)
-            {
-                fallback = GetFallbackCube();
-            }
-
-            if (fallback == null)
-            {
-                visual.meshes = emptyMeshes;
-                visual.localMatrices = emptyMatrices;
-                visual.partCount = 0;
-                return visual;
-            }
-
-            visual.meshes = new Mesh[1];
-            visual.localMatrices = new Matrix4x4[1];
-            visual.meshes[0] = fallback;
-            visual.localMatrices[0] = Matrix4x4.identity;
-            visual.partCount = 1;
-            visual.usesPrefabParts = false;
-            return visual;
-        }
-
-        private bool TryBuildPrefabParts(GameObject prefab, CachedBlockVisual visual)
-        {
-            MeshFilter[] filters = prefab.GetComponentsInChildren<MeshFilter>(true);
-            int filterCount = filters.Length;
-            int validCount = 0;
-            for (int i = 0; i < filterCount; i++)
-            {
-                MeshFilter filter = filters[i];
-                if (filter == null || filter.sharedMesh == null)
-                {
-                    continue;
-                }
-
-                validCount++;
-            }
-
-            if (validCount == 0)
-            {
-                return false;
-            }
-
-            Mesh[] meshes = new Mesh[validCount];
-            Matrix4x4[] localMatrices = new Matrix4x4[validCount];
-            Matrix4x4 rootWorldToLocal = prefab.transform.worldToLocalMatrix;
-            int writeIndex = 0;
-            for (int i = 0; i < filterCount; i++)
-            {
-                MeshFilter filter = filters[i];
-                if (filter == null || filter.sharedMesh == null)
-                {
-                    continue;
-                }
-
-                meshes[writeIndex] = filter.sharedMesh;
-                localMatrices[writeIndex] = rootWorldToLocal * filter.transform.localToWorldMatrix;
-                writeIndex++;
-            }
-
-            visual.meshes = meshes;
-            visual.localMatrices = localMatrices;
-            visual.partCount = validCount;
-            visual.usesPrefabParts = true;
-            return true;
-        }
-
-        private Mesh GetFallbackCube()
-        {
-            if (fallbackCubeMesh != null)
-            {
-                return fallbackCubeMesh;
-            }
-
-            fallbackCubeMesh = Resources.GetBuiltinResource<Mesh>("Cube.fbx");
-            return fallbackCubeMesh;
-        }
-
-        private Color BuildGhostColor(Color editorColor, bool isActive)
-        {
-            Color hologram = Color.Lerp(new Color(0.35f, 0.86f, 1f, 1f), editorColor, 0.72f);
-            hologram.a = isActive ? 0.24f : 0.08f;
-            return hologram;
-        }
-
-        private void EnsureMaterial()
-        {
-            if (cachedBlueprintMaterial != null)
+            if (preview == null || preview.instance == null)
             {
                 return;
             }
 
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader == null)
-            {
-                shader = Shader.Find("Sprites/Default");
-            }
-
-            if (shader == null)
-            {
-                shader = Shader.Find("Unlit/Transparent");
-            }
-
-            if (shader == null)
-            {
-                shader = Shader.Find("UI/Default");
-            }
-
-            if (shader == null)
-            {
-                return;
-            }
-
-            cachedBlueprintMaterial = new Material(shader);
-            cachedBlueprintMaterial.name = "SmashFast Blueprint Ghost";
-            cachedBlueprintMaterial.hideFlags = HideFlags.HideAndDontSave;
-            ConfigureTransparent(cachedBlueprintMaterial);
-            materialHasBaseColor = cachedBlueprintMaterial.HasProperty(baseColorId);
-            materialHasColor = cachedBlueprintMaterial.HasProperty(colorId);
+            Object.DestroyImmediate(preview.instance);
+            preview.instance = null;
+            preview.prefabId = 0;
+            preview.blockId = 0;
         }
 
-        private void ConfigureTransparent(Material material)
+        private class PreviewInstance
         {
-            if (material.HasProperty("_Surface"))
-            {
-                material.SetFloat("_Surface", 1f);
-            }
-
-            if (material.HasProperty("_Blend"))
-            {
-                material.SetFloat("_Blend", 0f);
-            }
-
-            material.SetOverrideTag("RenderType", "Transparent");
-            if (material.HasProperty("_SrcBlend"))
-            {
-                material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
-            }
-
-            if (material.HasProperty("_DstBlend"))
-            {
-                material.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
-            }
-
-            if (material.HasProperty("_ZWrite"))
-            {
-                material.SetInt("_ZWrite", 0);
-            }
-
-            if (material.HasProperty("_ZTest"))
-            {
-                material.SetInt("_ZTest", (int)CompareFunction.LessEqual);
-            }
-
-            if (material.HasProperty("_Cull"))
-            {
-                material.SetInt("_Cull", (int)CullMode.Off);
-            }
-
-            material.DisableKeyword("_ALPHATEST_ON");
-            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-            material.renderQueue = (int)RenderQueue.Transparent;
-            if (material.HasProperty("_BaseColor"))
-            {
-                material.SetColor("_BaseColor", Color.white);
-            }
-
-            if (material.HasProperty("_Color"))
-            {
-                material.SetColor("_Color", Color.white);
-            }
-        }
-
-        private void DestroyMaterial()
-        {
-            if (cachedBlueprintMaterial == null)
-            {
-                return;
-            }
-
-            Object.DestroyImmediate(cachedBlueprintMaterial);
-            cachedBlueprintMaterial = null;
-        }
-
-        private class CachedBlockVisual
-        {
-            public Mesh[] meshes;
-            public Matrix4x4[] localMatrices;
-            public int partCount;
+            public GameObject instance;
             public int prefabId;
-            public int previewMeshId;
-            public bool usesPrefabParts;
+            public int blockId;
         }
     }
 }

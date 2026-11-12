@@ -1,3 +1,6 @@
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using SmashFast.Core.Effects;
 using SmashFast.Core.Pooling;
 using SmashFast.Data;
 using SmashFast.Gameplay.Cannon;
@@ -7,374 +10,449 @@ namespace SmashFast.Level
 {
     public class SpawnedBlock : MonoBehaviour, IPoolable
     {
+        private const int HoldGraceTicks = 10;
+        private const float BodyLinearDamping = 0.05f;
+        private const float BodyAngularDamping = 0.8f;
+        private const float BodyMaxDepenetrationVelocity = 3f;
+        private const float BodySleepThreshold = 0.1f;
+
+        [SerializeField] private GameObject intactVisual;
+        [SerializeField] private GameObject fracturedVisual;
+        [SerializeField] private Transform tableTop;
+        [SerializeField, Min(0f)] private float fragmentHoldSeconds = 1f;
+        [SerializeField, Min(0.05f)] private float fragmentFadeSeconds = 1.2f;
+        [SerializeField, Min(0f)] private float fragmentBurstSpeed = 2.2f;
+        [SerializeField, Min(0f)] private float fragmentPushSpeed = 3.5f;
+        [SerializeField, Min(0f)] private float fragmentLiftSpeed = 1.8f;
+        [SerializeField, Min(0f)] private float fragmentSpinSpeed = 10f;
+
         private Rigidbody body;
-        private Renderer[] renderers;
-        private MaterialPropertyBlock propertyBlock;
-        private readonly int baseColorId = Shader.PropertyToID("_BaseColor");
-        private readonly int colorId = Shader.PropertyToID("_Color");
-        private IDestructibleTracker tracker;
+        private Rigidbody[] fracturePieces;
+        private float[] fracturePieceMasses;
+        private Vector3[] fracturePiecePositions;
+        private Quaternion[] fracturePieceRotations;
+        private Renderer[] tableTopRenderers;
+        private ShrinkFadeEffect fadeEffect;
+        private IDestructibleTracker destructibleTracker;
         private IUniversalObjectPool objectPool;
-        private IBlockFractureReceiver fractureReceiver;
-        private float bodyMass = 1f;
-        private float impactBreakThreshold = 3.5f;
-        private float fallEliminationY = -1.5f;
-        private int groundLayer = -1;
         private BlockMaterialType materialType;
-        private bool kinematicBase;
-        private bool countsAsDestructible;
-        private bool isTargetBlock;
+        private bool isKinematicBase;
+        private bool isTarget;
         private bool isBroken;
-        private bool lifetimeNotified;
-
-        public bool IsTargetBlock
-        {
-            get
-            {
-                return isTargetBlock;
-            }
-        }
-
-        public bool IsBroken
-        {
-            get
-            {
-                return isBroken;
-            }
-        }
+        private float massMultiplier = 1f;
+        private bool isHolding;
+        private int holdTicksRemaining;
+        private int groundLayer = -1;
+        private CancellationTokenSource returnPoolCts;
 
         private void Awake()
         {
             body = GetComponent<Rigidbody>();
-            if (body == null)
-            {
-                body = gameObject.AddComponent<Rigidbody>();
-            }
-
-            renderers = GetComponentsInChildren<Renderer>(true);
-            propertyBlock = new MaterialPropertyBlock();
             groundLayer = LayerMask.NameToLayer("Ground");
-            fractureReceiver = GetComponent<IBlockFractureReceiver>();
-            if (fractureReceiver == null)
-            {
-                fractureReceiver = GetComponentInChildren<IBlockFractureReceiver>(true);
-            }
-
-            ApplyBodySettings();
-            ResetBody();
+            CacheFracturePieces();
+            ShowIntact();
         }
 
-        public void InitializeBlock(BlockDefinition definition, Vector3 targetScale)
+        private void CacheFracturePieces()
         {
-            if (targetScale == Vector3.zero)
+            if (fracturedVisual == null)
             {
-                targetScale = Vector3.one;
+                return;
             }
 
-            transform.localScale = targetScale;
-            bodyMass = definition.mass > 0f ? definition.mass : 1f;
-            kinematicBase = definition.isKinematicBase;
+            fracturePieces = fracturedVisual.GetComponentsInChildren<Rigidbody>(true);
+            int count = fracturePieces.Length;
+            fracturePieceMasses = new float[count];
+            fracturePiecePositions = new Vector3[count];
+            fracturePieceRotations = new Quaternion[count];
+            Transform[] pieceTransforms = new Transform[count];
+            for (int i = 0; i < count; i++)
+            {
+                Transform pieceTransform = fracturePieces[i].transform;
+                pieceTransforms[i] = pieceTransform;
+                fracturePieceMasses[i] = fracturePieces[i].mass;
+                fracturePiecePositions[i] = pieceTransform.localPosition;
+                fracturePieceRotations[i] = pieceTransform.localRotation;
+            }
+
+            fadeEffect = new ShrinkFadeEffect(pieceTransforms, fracturedVisual.GetComponentsInChildren<Renderer>(true));
+        }
+
+        private void ResetFracturePieces(Vector3 linearVelocity, Vector3 angularVelocity, Vector3 pushDirection)
+        {
+            if (fracturePieces == null)
+            {
+                return;
+            }
+
+            fadeEffect.Restore();
+            int count = fracturePieces.Length;
+            for (int i = 0; i < count; i++)
+            {
+                Rigidbody piece = fracturePieces[i];
+                Transform pieceTransform = piece.transform;
+                pieceTransform.SetLocalPositionAndRotation(fracturePiecePositions[i], fracturePieceRotations[i]);
+                piece.mass = fracturePieceMasses[i] * massMultiplier;
+                if (piece.isKinematic)
+                {
+                    continue;
+                }
+
+                Vector3 outward = pieceTransform.position - transform.position;
+                outward.y = 0f;
+                outward = outward.sqrMagnitude > 0.0001f ? outward.normalized : Random.onUnitSphere;
+                outward.y = 0f;
+                piece.linearVelocity = linearVelocity
+                    + (outward * (fragmentBurstSpeed * Random.Range(0.5f, 1.2f)))
+                    + (pushDirection * (fragmentPushSpeed * Random.Range(0.6f, 1.1f)))
+                    + (Vector3.up * (fragmentLiftSpeed * Random.Range(0.2f, 1f)));
+                piece.angularVelocity = angularVelocity + (Random.insideUnitSphere * fragmentSpinSpeed);
+            }
+        }
+
+        public void Initialize(
+            BlockDefinition definition,
+            Vector3 layoutScale,
+            float globalBlockScale,
+            float tableHeightFactor,
+            Vector3Int sizeInCells,
+            float blockMassMultiplier,
+            IDestructibleTracker tracker,
+            IUniversalObjectPool pool,
+            FadeMaterialLibrary fadeLibrary)
+        {
+            CancelReturnPool();
+
+            isKinematicBase = definition.isKinematicBase;
             materialType = definition.materialType;
-            impactBreakThreshold = definition.impactBreakThreshold > 0f ? definition.impactBreakThreshold : 3.5f;
-            isTargetBlock = definition.IsTarget();
+            isTarget = definition.IsTarget();
             isBroken = false;
-            ApplyBodySettings();
-            ResetBody();
-            ClearPropertyOverrides();
-            ApplyEditorColor(definition.editorColor);
-        }
-
-        public void ConfigureLifetime(IDestructibleTracker lifetimeTracker, IUniversalObjectPool pool, float eliminationY)
-        {
-            tracker = lifetimeTracker;
+            isHolding = false;
+            massMultiplier = blockMassMultiplier;
+            destructibleTracker = tracker;
             objectPool = pool;
-            fallEliminationY = eliminationY;
-            countsAsDestructible = isTargetBlock;
-            lifetimeNotified = false;
-            isBroken = false;
+            if (fadeEffect != null)
+            {
+                fadeEffect.Prepare(fadeLibrary);
+            }
+
+            ApplyScale(layoutScale, globalBlockScale, tableHeightFactor, sizeInCells);
+            ShowIntact();
+            ConfigureBody((definition.mass > 0f ? definition.mass : 1f) * massMultiplier);
         }
 
-        public void OnImpactReceived(Vector3 hitPoint, Vector3 hitVelocity, float impactForce)
+        public void ApplyEditorPreviewVisuals(Vector3 layoutScale, float globalBlockScale, float tableHeightFactor, Vector3Int sizeInCells)
         {
-            if (isBroken || !isTargetBlock)
-            {
-                return;
-            }
-
-            if (fractureReceiver == null)
-            {
-                return;
-            }
-
-            fractureReceiver.OnImpactReceived(hitPoint, hitVelocity, impactForce);
+            ApplyScale(layoutScale, globalBlockScale, tableHeightFactor, sizeInCells);
+            ShowIntact();
         }
 
-        public void BreakBlock(Vector3 breakPoint, Vector3 breakVelocity)
+        public void ApplyEditorPreviewVisuals()
         {
-            if (isBroken || !isTargetBlock)
+            ShowIntact();
+        }
+
+        public void Hold()
+        {
+            if (body == null || body.isKinematic)
             {
                 return;
             }
 
-            isBroken = true;
-            isTargetBlock = false;
-            if (fractureReceiver != null)
+            isHolding = true;
+            holdTicksRemaining = HoldGraceTicks;
+            body.Sleep();
+        }
+
+        private void FixedUpdate()
+        {
+            if (!isHolding)
             {
-                fractureReceiver.OnBlockBroken(breakPoint, breakVelocity);
+                return;
             }
 
-            if (objectPool != null)
+            if (holdTicksRemaining > 0)
             {
-                objectPool.Despawn(gameObject);
+                holdTicksRemaining--;
+                body.Sleep();
+                return;
             }
 
-            if (countsAsDestructible && !lifetimeNotified && tracker != null)
+            if (!body.IsSleeping())
             {
-                lifetimeNotified = true;
-                tracker.NotifyDestructibleDespawned();
-            }
-
-            if (gameObject.activeSelf)
-            {
-                gameObject.SetActive(false);
+                isHolding = false;
             }
         }
 
         public void OnSpawned()
         {
+            CancelReturnPool();
             isBroken = false;
-            isTargetBlock = false;
-            countsAsDestructible = false;
-            lifetimeNotified = false;
+            isTarget = false;
+            destructibleTracker = null;
+            objectPool = null;
             materialType = BlockMaterialType.TableFoundation;
-            ApplyBodySettings();
-            ResetBody();
-            ClearPropertyOverrides();
+            ShowIntact();
         }
 
         public void OnDespawned()
         {
-            if (countsAsDestructible && !lifetimeNotified && tracker != null)
-            {
-                lifetimeNotified = true;
-                tracker.NotifyDestructibleDespawned();
-            }
-
-            countsAsDestructible = false;
-            isTargetBlock = false;
-            tracker = null;
+            CancelReturnPool();
+            UnregisterTarget();
+            destructibleTracker = null;
             objectPool = null;
-            ResetBody();
-            ClearPropertyOverrides();
+            ShowIntact();
         }
 
-        private void FixedUpdate()
+        private void ApplyScale(Vector3 layoutScale, float globalBlockScale, float tableHeightFactor, Vector3Int sizeInCells)
         {
-            if (!isTargetBlock || isBroken)
+            Vector3 globalScale = Vector3.one * globalBlockScale;
+            if (tableTop == null)
+            {
+                Vector3 blockScale = layoutScale == Vector3.zero ? Vector3.one : layoutScale;
+                transform.localScale = Vector3.Scale(blockScale, globalScale);
+                return;
+            }
+
+            float heightFactor = Mathf.Max(1f, tableHeightFactor);
+            transform.localScale = new Vector3(globalBlockScale, globalBlockScale * heightFactor, globalBlockScale);
+            float topScaleX = Mathf.Max(1, sizeInCells.x);
+            float topScaleZ = Mathf.Max(1, sizeInCells.z);
+            Vector3 previousScale = tableTop.localScale;
+            Vector3 previousPosition = tableTop.localPosition;
+            tableTop.localScale = new Vector3(topScaleX, 1f / heightFactor, topScaleZ);
+            tableTop.localPosition = new Vector3(
+                previousPosition.x / previousScale.x * topScaleX,
+                previousPosition.y,
+                previousPosition.z / previousScale.z * topScaleZ);
+            AlignTableTop(globalBlockScale * heightFactor * 0.5f);
+        }
+
+        private void AlignTableTop(float topHeightAboveCenter)
+        {
+            if (tableTopRenderers == null || tableTopRenderers.Length == 0)
+            {
+                tableTopRenderers = tableTop.GetComponentsInChildren<Renderer>(true);
+            }
+
+            if (tableTopRenderers.Length == 0)
             {
                 return;
             }
 
-            if (!EliminatesOnFall(materialType))
+            float currentTop = float.MinValue;
+            for (int i = 0; i < tableTopRenderers.Length; i++)
             {
-                return;
+                float rendererTop = tableTopRenderers[i].bounds.max.y;
+                if (rendererTop > currentTop)
+                {
+                    currentTop = rendererTop;
+                }
             }
 
-            if (transform.position.y >= fallEliminationY)
-            {
-                return;
-            }
-
-            Vector3 velocity = Vector3.zero;
-            if (body != null && !body.isKinematic)
-            {
-                velocity = body.linearVelocity;
-            }
-
-            BreakBlock(transform.position, velocity);
+            float delta = (transform.position.y + topHeightAboveCenter) - currentTop;
+            tableTop.position += Vector3.up * delta;
         }
 
         private void OnCollisionEnter(Collision collision)
         {
-            if (!isTargetBlock || isBroken || collision == null)
-            {
-                return;
-            }
-
-            if (collision.contactCount <= 0)
-            {
-                return;
-            }
-
-            Vector3 hitPoint = collision.GetContact(0).point;
-            Vector3 hitVelocity = collision.relativeVelocity;
-            float impactSpeed = hitVelocity.magnitude;
-            float impactForce = impactSpeed;
-            if (body != null)
-            {
-                impactForce = impactSpeed * body.mass;
-            }
-
-            OnImpactReceived(hitPoint, hitVelocity, impactForce);
-            if (isBroken)
+            if (!isTarget || isBroken || collision == null)
             {
                 return;
             }
 
             Collider other = collision.collider;
-            if (other != null && groundLayer >= 0 && other.gameObject.layer == groundLayer)
-            {
-                if (EliminatesOnFall(materialType))
-                {
-                    BreakBlock(hitPoint, hitVelocity);
-                }
-
-                return;
-            }
-
-            if (!BreaksOnImpact(materialType))
+            if (other == null)
             {
                 return;
             }
 
-            bool projectileHit = false;
-            if (other != null)
+            if (groundLayer >= 0 && other.gameObject.layer == groundLayer)
             {
-                CannonProjectile projectile;
-                projectileHit = other.TryGetComponent(out projectile);
-                if (!projectileHit)
-                {
-                    projectileHit = other.GetComponentInParent<CannonProjectile>() != null;
-                }
+                Break(Vector3.zero);
+                return;
             }
 
-            if (projectileHit || impactSpeed >= impactBreakThreshold)
+            if (materialType != BlockMaterialType.Glass && materialType != BlockMaterialType.CeramicJar)
             {
-                BreakBlock(hitPoint, hitVelocity);
+                return;
             }
+
+            CannonProjectile projectile;
+            bool hitByCannonBall = other.TryGetComponent(out projectile)
+                || other.GetComponentInParent<CannonProjectile>() != null;
+
+            if (!hitByCannonBall)
+            {
+                return;
+            }
+
+            Vector3 push = transform.position - other.transform.position;
+            push.y = 0f;
+            Break(push.sqrMagnitude > 0.0001f ? push.normalized : Vector3.zero);
         }
 
-        private bool EliminatesOnFall(BlockMaterialType material)
+        private void Break(Vector3 pushDirection)
         {
-            if (material == BlockMaterialType.Wood)
+            if (isBroken || !isTarget)
             {
-                return true;
+                return;
             }
 
-            if (material == BlockMaterialType.Stone)
+            isBroken = true;
+            UnregisterTarget();
+
+            if (fracturedVisual == null)
             {
-                return true;
+                ReturnPool();
+                return;
             }
 
-            if (material == BlockMaterialType.Glass)
-            {
-                return true;
-            }
-
-            return material == BlockMaterialType.CeramicJar;
+            ShowFractured(pushDirection);
+            ScheduleReturnPool().Forget();
         }
 
-        private bool BreaksOnImpact(BlockMaterialType material)
+        private void ShowIntact()
         {
-            if (material == BlockMaterialType.Glass)
+            if (fadeEffect != null)
             {
-                return true;
+                fadeEffect.Restore();
             }
 
-            return material == BlockMaterialType.CeramicJar;
+            if (intactVisual != null)
+            {
+                intactVisual.SetActive(true);
+            }
+
+            if (fracturedVisual != null)
+            {
+                fracturedVisual.SetActive(false);
+            }
         }
 
-        private void ApplyBodySettings()
+        private void ShowFractured(Vector3 pushDirection)
+        {
+            if (intactVisual != null)
+            {
+                intactVisual.SetActive(false);
+            }
+
+            if (fracturedVisual == null)
+            {
+                return;
+            }
+
+            Vector3 inheritedLinear = Vector3.zero;
+            Vector3 inheritedAngular = Vector3.zero;
+            if (body != null && !body.isKinematic)
+            {
+                inheritedLinear = body.linearVelocity;
+                inheritedAngular = body.angularVelocity;
+            }
+
+            fracturedVisual.SetActive(true);
+            ResetFracturePieces(inheritedLinear, inheritedAngular, pushDirection);
+
+            if (body == null)
+            {
+                return;
+            }
+
+            isHolding = false;
+            body.detectCollisions = false;
+            body.isKinematic = true;
+        }
+
+        private void ConfigureBody(float mass)
         {
             if (body == null)
             {
                 return;
             }
 
-            if (!body.isKinematic)
-            {
-                body.linearVelocity = Vector3.zero;
-                body.angularVelocity = Vector3.zero;
-            }
-
-            body.mass = bodyMass;
-            body.isKinematic = kinematicBase;
-            body.useGravity = !kinematicBase;
-            body.collisionDetectionMode = CollisionDetectionMode.Discrete;
-            body.interpolation = RigidbodyInterpolation.None;
-            body.constraints = RigidbodyConstraints.None;
-            body.maxDepenetrationVelocity = 0.5f;
-            body.solverIterations = 10;
-            body.solverVelocityIterations = 4;
-            body.sleepThreshold = 0.05f;
-        }
-
-        public void SettleInPlace()
-        {
-            if (body == null)
-            {
-                return;
-            }
+            body.mass = mass;
+            body.isKinematic = isKinematicBase;
+            body.useGravity = !isKinematicBase;
+            body.detectCollisions = true;
+            body.linearDamping = BodyLinearDamping;
+            body.angularDamping = BodyAngularDamping;
+            body.maxDepenetrationVelocity = BodyMaxDepenetrationVelocity;
+            body.sleepThreshold = BodySleepThreshold;
 
             if (!body.isKinematic)
             {
                 body.linearVelocity = Vector3.zero;
                 body.angularVelocity = Vector3.zero;
+                body.Sleep();
             }
-
-            body.Sleep();
         }
 
-        private void ResetBody()
+        private void UnregisterTarget()
         {
-            SettleInPlace();
-        }
-
-        private void ClearPropertyOverrides()
-        {
-            if (renderers == null || propertyBlock == null)
+            if (!isTarget)
             {
                 return;
             }
 
-            propertyBlock.Clear();
-            int count = renderers.Length;
-            for (int i = 0; i < count; i++)
+            isTarget = false;
+            if (destructibleTracker != null)
             {
-                Renderer renderer = renderers[i];
-                if (renderer == null)
-                {
-                    continue;
-                }
-
-                renderer.SetPropertyBlock(propertyBlock);
+                destructibleTracker.UnregisterTarget();
             }
         }
 
-        private void ApplyEditorColor(Color tint)
+        private async UniTaskVoid ScheduleReturnPool()
         {
-            if (renderers == null || propertyBlock == null)
+            CancelReturnPool();
+            returnPoolCts = new CancellationTokenSource();
+            CancellationToken token = returnPoolCts.Token;
+
+            bool canceled = await UniTask.Delay(
+                System.TimeSpan.FromSeconds(fragmentHoldSeconds),
+                DelayType.DeltaTime,
+                PlayerLoopTiming.Update,
+                token).SuppressCancellationThrow();
+
+            if (canceled || token.IsCancellationRequested)
             {
                 return;
             }
 
-            if (tint.a <= 0.01f)
+            canceled = await fadeEffect.PlayAsync(fragmentFadeSeconds, token);
+            if (canceled || token.IsCancellationRequested)
             {
-                tint = Color.white;
+                return;
             }
 
-            propertyBlock.SetColor(baseColorId, tint);
-            propertyBlock.SetColor(colorId, tint);
-            int count = renderers.Length;
-            for (int i = 0; i < count; i++)
-            {
-                Renderer renderer = renderers[i];
-                if (renderer == null)
-                {
-                    continue;
-                }
+            ReturnPool();
+        }
 
-                renderer.SetPropertyBlock(propertyBlock);
+        private void CancelReturnPool()
+        {
+            if (returnPoolCts == null)
+            {
+                return;
             }
+
+            returnPoolCts.Cancel();
+            returnPoolCts.Dispose();
+            returnPoolCts = null;
+        }
+
+        private void ReturnPool()
+        {
+            if (objectPool != null)
+            {
+                objectPool.Despawn(gameObject);
+                return;
+            }
+
+            gameObject.SetActive(false);
+        }
+
+        private void OnDestroy()
+        {
+            CancelReturnPool();
         }
     }
 }

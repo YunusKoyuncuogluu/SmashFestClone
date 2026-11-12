@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using SmashFast.Core.Effects;
 using SmashFast.Core.Pooling;
 using SmashFast.Data;
 using UnityEngine;
@@ -6,17 +8,19 @@ using Zenject;
 
 namespace SmashFast.Level
 {
-    public class LevelSpawner : ILevelSpawner, IDestructibleTracker
+    public class LevelSpawner : ILevelSpawner, IDestructibleTracker, IInitializable, IDisposable
     {
+        public const string GroundBindingId = "LevelGround";
+
         private readonly IUniversalObjectPool objectPool;
         private readonly BlockCatalogSO blockCatalog;
+        private readonly FadeMaterialLibrary fadeLibrary;
         private readonly Dictionary<int, bool> prefabIsCompound;
-        private readonly HashSet<int> missingPrefabIds;
         private Transform levelRoot;
-        private GameObject groundObject;
-        private bool groundMaterialAssigned;
-        private readonly int baseColorId = Shader.PropertyToID("_BaseColor");
-        private readonly int colorId = Shader.PropertyToID("_Color");
+        private readonly Collider groundCollider;
+        private readonly LevelGroundAnchor groundAnchorResolver = new LevelGroundAnchor();
+        private LevelData lastLevelData;
+        private int lastLevelNumber;
         private int activeDestructibleCount;
         private int resolvedMaxAmmo;
         private float spawnYawOffset;
@@ -45,18 +49,49 @@ namespace SmashFast.Level
 
         public LevelSpawner(
             IUniversalObjectPool objectPool,
+            FadeMaterialLibrary fadeLibrary,
+            [Inject(Id = GroundBindingId)] Collider groundCollider,
             [InjectOptional] BlockCatalogSO blockCatalog,
             [InjectOptional] LevelDatabaseSO levelDatabase)
         {
             this.objectPool = objectPool;
+            this.fadeLibrary = fadeLibrary;
+            this.groundCollider = groundCollider;
             this.blockCatalog = blockCatalog;
             this.levelDatabase = levelDatabase;
             prefabIsCompound = new Dictionary<int, bool>(16);
-            missingPrefabIds = new HashSet<int>();
+        }
+
+        public void Initialize()
+        {
+            if (blockCatalog != null)
+            {
+                blockCatalog.ScaleChanged += OnScaleChanged;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (blockCatalog != null)
+            {
+                blockCatalog.ScaleChanged -= OnScaleChanged;
+            }
+        }
+
+        private void OnScaleChanged()
+        {
+            if (lastLevelData == null)
+            {
+                return;
+            }
+
+            SpawnLevel(lastLevelData, lastLevelNumber);
         }
 
         public void SpawnLevel(LevelData levelData, int displayLevelNumber)
         {
+            lastLevelData = levelData;
+            lastLevelNumber = displayLevelNumber;
             resolvedMaxAmmo = 0;
             spawnYawOffset = 0f;
             if (levelData == null || objectPool == null)
@@ -93,7 +128,6 @@ namespace SmashFast.Level
 
             if (blockCatalog == null)
             {
-                Debug.LogError("LevelSpawner has no BlockCatalogSO.");
                 return;
             }
 
@@ -109,7 +143,8 @@ namespace SmashFast.Level
 
             activeDestructibleCount = 0;
             EnsureLevelRoot();
-            EnsureGround(levelData);
+
+            Vector3 groundAnchor = groundAnchorResolver.Resolve(groundCollider);
 
             int count = levelData.PlacementCount;
             for (int i = 0; i < count; i++)
@@ -120,13 +155,13 @@ namespace SmashFast.Level
                     continue;
                 }
 
-                SpawnPlacement(levelData, placement, random, displayLevelNumber, cycleIndex);
+                SpawnPlacement(levelData, placement, groundAnchor, random, displayLevelNumber, cycleIndex);
             }
 
-            SettleSpawnedBodies();
+            HoldSpawnedBodies();
         }
 
-        private void SettleSpawnedBodies()
+        private void HoldSpawnedBodies()
         {
             if (levelRoot == null)
             {
@@ -143,7 +178,7 @@ namespace SmashFast.Level
                     continue;
                 }
 
-                block.SettleInPlace();
+                block.Hold();
             }
         }
 
@@ -169,18 +204,13 @@ namespace SmashFast.Level
 
         private void ReleaseRuntimeLevel()
         {
-            if (runtimeLevel == null)
-            {
-                return;
-            }
-
-            Object.Destroy(runtimeLevel);
             runtimeLevel = null;
         }
 
         private void SpawnPlacement(
             LevelData levelData,
             BlockPlacementData placement,
+            Vector3 groundAnchor,
             System.Random random,
             int displayLevelNumber,
             int cycleIndex)
@@ -206,44 +236,38 @@ namespace SmashFast.Level
 
             if (definition.prefab == null)
             {
-                if (missingPrefabIds.Add(definition.blockId))
-                {
-                    Debug.LogWarning("Block " + definition.blockId.ToString() + " has no prefab and was not spawned.");
-                }
-
                 return;
             }
 
-            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(definition.sizeInCells, placement.rotationEuler);
+            Vector3Int sizeInCells = levelData.GetSizeInCells(placement, blockCatalog);
+            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(sizeInCells, placement.rotationEuler);
             Vector3 center;
             Quaternion rotation;
             levelData.GetWorldPose(placement, effectiveSize, blockCatalog, spawnYawOffset, out center, out rotation);
-            Vector3 targetScale = ResolveTargetScale(definition, levelData);
-            GameObject instance = objectPool.Spawn(definition.prefab, center, rotation, levelRoot);
+            center += groundAnchor;
+            Vector3 targetScale = ResolveTargetScale(definition, levelData, sizeInCells);
+            Quaternion spawnRotation = rotation * Quaternion.Euler(definition.meshEuler);
+            GameObject instance = objectPool.Spawn(definition.prefab, center, spawnRotation, levelRoot);
             if (instance == null)
             {
                 return;
             }
 
-            MatchGroundMaterial(instance);
-
             SpawnedBlock block = instance.GetComponent<SpawnedBlock>();
             if (block == null)
             {
-                block = instance.AddComponent<SpawnedBlock>();
-                objectPool.NotifyInstanceComponentsChanged(instance);
-                block.OnSpawned();
+                objectPool.Despawn(instance);
+                return;
             }
 
-            block.InitializeBlock(definition, targetScale);
-            block.ConfigureLifetime(this, objectPool, levelData.FallEliminationY);
+            block.Initialize(definition, targetScale, blockCatalog.GetScale(), blockCatalog.GetTableHeightFactor(levelData.CellSize.y), sizeInCells, blockCatalog.GetMassMultiplier(), this, objectPool, fadeLibrary);
             if (definition.IsTarget())
             {
                 activeDestructibleCount++;
             }
         }
 
-        public void NotifyDestructibleDespawned()
+        public void UnregisterTarget()
         {
             if (suppressDestructibleNotifications)
             {
@@ -258,14 +282,21 @@ namespace SmashFast.Level
             activeDestructibleCount--;
         }
 
-        private Vector3 ResolveTargetScale(BlockDefinition definition, LevelData levelData)
+        private Vector3 ResolveTargetScale(BlockDefinition definition, LevelData levelData, Vector3Int sizeInCells)
         {
+            bool foundationTable = definition.shapeRole == BlockShapeRole.FoundationTable
+                || definition.materialType == BlockMaterialType.TableFoundation;
+            if (foundationTable)
+            {
+                return Vector3.one;
+            }
+
             if (IsCompoundPrefab(definition.prefab))
             {
                 return levelData.GetCellWorldScale(definition.baseScale);
             }
 
-            return levelData.GetFootprintWorldScale(definition.baseScale, definition.sizeInCells);
+            return levelData.GetFootprintWorldScale(definition.baseScale, sizeInCells);
         }
 
         private bool IsCompoundPrefab(GameObject prefab)
@@ -305,88 +336,6 @@ namespace SmashFast.Level
 
             GameObject rootObject = new GameObject("SpawnedLevel");
             levelRoot = rootObject.transform;
-        }
-
-        private void EnsureGround(LevelData levelData)
-        {
-            if (groundObject == null)
-            {
-                groundObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                groundObject.name = "Ground";
-                groundObject.transform.SetParent(levelRoot, false);
-            }
-
-            Vector3 cell = levelData.CellSize;
-            Vector3Int grid = levelData.GridDimensions;
-            Vector3 origin = levelData.OriginOffset;
-            Vector3 center = new Vector3(origin.x, origin.y, origin.z);
-            float width = grid.x * cell.x;
-            float depth = grid.z * cell.z;
-            float thickness = Mathf.Max(0.2f, cell.y);
-            float yawSpan = FindMaxPlacementYaw(levelData) + Mathf.Abs(spawnYawOffset);
-            float coverage = 1f;
-            if (yawSpan > 0.5f)
-            {
-                coverage = 1.35f + (yawSpan / 90f);
-            }
-
-            int groundLayer = LayerMask.NameToLayer("Ground");
-            if (groundLayer >= 0)
-            {
-                groundObject.layer = groundLayer;
-            }
-
-            groundObject.transform.SetPositionAndRotation(
-                new Vector3(center.x, origin.y - (thickness * 0.5f), center.z),
-                Quaternion.identity);
-            groundObject.transform.localScale = new Vector3(
-                (width + (cell.x * 2f)) * coverage,
-                thickness,
-                (depth + (cell.z * 2f)) * coverage);
-        }
-
-        private float FindMaxPlacementYaw(LevelData levelData)
-        {
-            float maxYaw = 0f;
-            int count = levelData.PlacementCount;
-            for (int i = 0; i < count; i++)
-            {
-                BlockPlacementData placement;
-                if (!levelData.TryGetPlacementByIndex(i, out placement))
-                {
-                    continue;
-                }
-
-                float yaw = Mathf.Abs(placement.rotationEuler.y);
-                if (yaw > maxYaw)
-                {
-                    maxYaw = yaw;
-                }
-            }
-
-            return maxYaw;
-        }
-
-        private void MatchGroundMaterial(GameObject blockInstance)
-        {
-            if (groundMaterialAssigned || groundObject == null || blockInstance == null)
-            {
-                return;
-            }
-
-            Renderer blockRenderer = blockInstance.GetComponent<Renderer>();
-            Renderer groundRenderer = groundObject.GetComponent<Renderer>();
-            if (blockRenderer == null || groundRenderer == null || blockRenderer.sharedMaterial == null)
-            {
-                return;
-            }
-
-            groundRenderer.sharedMaterial = blockRenderer.sharedMaterial;
-            MaterialPropertyBlock tint = new MaterialPropertyBlock();
-            tint.SetColor(baseColorId, new Color(0.32f, 0.33f, 0.36f, 1f));
-            tint.SetColor(colorId, new Color(0.32f, 0.33f, 0.36f, 1f));
-            groundRenderer.SetPropertyBlock(tint);
-            groundMaterialAssigned = true;
         }
     }
 }

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace SmashFast.Fracture
 {
@@ -11,20 +13,14 @@ namespace SmashFast.Fracture
         public Vector4 Tangent;
         public Vector2 Uv0;
 
-        public static FractureVertex Lerp(in FractureVertex a, in FractureVertex b, float t)
+        public FractureVertex Lerp(in FractureVertex target, float t)
         {
             FractureVertex result;
-            result.Position = Vector3.LerpUnclamped(a.Position, b.Position, t);
-            result.Normal = Vector3.Normalize(Vector3.LerpUnclamped(a.Normal, b.Normal, t));
-            result.Tangent = Vector4.LerpUnclamped(a.Tangent, b.Tangent, t);
-            float tangentW = a.Tangent.w >= 0f ? 1f : -1f;
-            if (b.Tangent.w < 0f)
-            {
-                tangentW = -1f;
-            }
-
-            result.Tangent.w = tangentW;
-            result.Uv0 = Vector2.LerpUnclamped(a.Uv0, b.Uv0, t);
+            result.Position = Vector3.LerpUnclamped(Position, target.Position, t);
+            result.Normal = Vector3.Normalize(Vector3.LerpUnclamped(Normal, target.Normal, t));
+            result.Tangent = Vector4.LerpUnclamped(Tangent, target.Tangent, t);
+            result.Tangent.w = Tangent.w < 0f || target.Tangent.w < 0f ? -1f : 1f;
+            result.Uv0 = Vector2.LerpUnclamped(Uv0, target.Uv0, t);
             return result;
         }
     }
@@ -39,16 +35,18 @@ namespace SmashFast.Fracture
 
     public sealed class FractureMeshBuffer
     {
-        public readonly System.Collections.Generic.List<FractureVertex> Vertices;
-        public readonly System.Collections.Generic.List<int> ExteriorTriangles;
-        public readonly System.Collections.Generic.List<int> InteriorTriangles;
+        public readonly List<FractureVertex> Vertices;
+        public readonly List<int> ExteriorTriangles;
+        public readonly List<int> InteriorTriangles;
 
         public FractureMeshBuffer(int vertexCapacity, int triangleCapacity)
         {
-            Vertices = new System.Collections.Generic.List<FractureVertex>(vertexCapacity);
-            ExteriorTriangles = new System.Collections.Generic.List<int>(triangleCapacity);
-            InteriorTriangles = new System.Collections.Generic.List<int>(triangleCapacity / 2);
+            Vertices = new List<FractureVertex>(vertexCapacity);
+            ExteriorTriangles = new List<int>(triangleCapacity);
+            InteriorTriangles = new List<int>(triangleCapacity / 2);
         }
+
+        public bool HasTriangles() => ExteriorTriangles.Count >= 3 || InteriorTriangles.Count >= 3;
 
         public void Clear()
         {
@@ -57,57 +55,46 @@ namespace SmashFast.Fracture
             InteriorTriangles.Clear();
         }
 
+        public void CopyFrom(FractureMeshBuffer source)
+        {
+            Clear();
+            Vertices.AddRange(source.Vertices);
+            ExteriorTriangles.AddRange(source.ExteriorTriangles);
+            InteriorTriangles.AddRange(source.InteriorTriangles);
+        }
+
         public FractureMeshBuffer Clone()
         {
             FractureMeshBuffer clone = new FractureMeshBuffer(Vertices.Capacity, ExteriorTriangles.Capacity);
-            clone.Vertices.AddRange(Vertices);
-            clone.ExteriorTriangles.AddRange(ExteriorTriangles);
-            clone.InteriorTriangles.AddRange(InteriorTriangles);
+            clone.CopyFrom(this);
             return clone;
         }
 
         public int AddVertex(in FractureVertex vertex)
         {
-            int index = Vertices.Count;
             Vertices.Add(vertex);
-            return index;
+            return Vertices.Count - 1;
         }
 
         public void AddTriangle(int a, int b, int c, bool interior)
         {
-            if (interior)
-            {
-                InteriorTriangles.Add(a);
-                InteriorTriangles.Add(b);
-                InteriorTriangles.Add(c);
-            }
-            else
-            {
-                ExteriorTriangles.Add(a);
-                ExteriorTriangles.Add(b);
-                ExteriorTriangles.Add(c);
-            }
-        }
-
-        public bool HasTriangles()
-        {
-            return ExteriorTriangles.Count >= 3 || InteriorTriangles.Count >= 3;
+            List<int> triangles = interior ? InteriorTriangles : ExteriorTriangles;
+            triangles.Add(a);
+            triangles.Add(b);
+            triangles.Add(c);
         }
 
         public Bounds ComputeBounds()
         {
             if (Vertices.Count == 0)
-            {
                 return new Bounds(Vector3.zero, Vector3.zero);
-            }
 
             Vector3 min = Vertices[0].Position;
-            Vector3 max = Vertices[0].Position;
+            Vector3 max = min;
             for (int i = 1; i < Vertices.Count; i++)
             {
-                Vector3 p = Vertices[i].Position;
-                min = Vector3.Min(min, p);
-                max = Vector3.Max(max, p);
+                min = Vector3.Min(min, Vertices[i].Position);
+                max = Vector3.Max(max, Vertices[i].Position);
             }
 
             Bounds bounds = new Bounds();
@@ -117,12 +104,9 @@ namespace SmashFast.Fracture
 
         public void ShiftToCentroid(out Vector3 centroid)
         {
-            Bounds bounds = ComputeBounds();
-            centroid = bounds.center;
+            centroid = ComputeBounds().center;
             if (centroid.sqrMagnitude <= MeshFracturer.Epsilon * MeshFracturer.Epsilon)
-            {
                 return;
-            }
 
             for (int i = 0; i < Vertices.Count; i++)
             {
@@ -134,12 +118,6 @@ namespace SmashFast.Fracture
 
         public Mesh BuildUnityMesh(string meshName)
         {
-            Mesh mesh = new Mesh();
-            mesh.name = meshName;
-            mesh.indexFormat = Vertices.Count > 65535
-                ? UnityEngine.Rendering.IndexFormat.UInt32
-                : UnityEngine.Rendering.IndexFormat.UInt16;
-
             int vertexCount = Vertices.Count;
             Vector3[] positions = new Vector3[vertexCount];
             Vector3[] normals = new Vector3[vertexCount];
@@ -154,6 +132,12 @@ namespace SmashFast.Fracture
                 tangents[i] = vertex.Tangent;
                 uvs[i] = vertex.Uv0;
             }
+
+            Mesh mesh = new Mesh
+            {
+                name = meshName,
+                indexFormat = vertexCount > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16
+            };
 
             mesh.SetVertices(positions);
             mesh.SetNormals(normals);

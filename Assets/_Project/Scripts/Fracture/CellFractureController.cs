@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -18,14 +19,17 @@ namespace SmashFast.Fracture
         [SerializeField] private PhysicsMaterial physicMaterial;
         [SerializeField] private bool editSeedsManually;
         [SerializeField] private List<Vector3> voronoiSeeds = new List<Vector3>();
+        [SerializeField, HideInInspector] private Transform previewRoot;
 
         private const string PreviewRootName = "__CellFracturePreview";
+        private const float Epsilon = MeshFracturer.Epsilon;
+        private const float EpsilonSqr = Epsilon * Epsilon;
 
+        private readonly MeshFracturer fracturer = new MeshFracturer();
+        private readonly List<Transform> previewPieceTransforms = new List<Transform>(32);
         private MeshFilter meshFilter;
         private MeshRenderer meshRenderer;
         private FracturedPiece[] previewPieces;
-        private Transform previewRoot;
-        private readonly List<Transform> previewPieceTransforms = new List<Transform>(32);
         private readonly List<Vector3> gizmoPlaneLoop = new List<Vector3>(16);
         private bool hideSourceDuringPreview;
         private bool cachedRendererEnabled = true;
@@ -33,77 +37,62 @@ namespace SmashFast.Fracture
 
         public int CellCount
         {
-            get { return cellCount; }
-            set { cellCount = Mathf.Clamp(value, 2, 100); }
+            get => cellCount;
+            set => cellCount = Mathf.Clamp(value, 2, 100);
         }
 
         public int RandomSeed
         {
-            get { return randomSeed; }
-            set { randomSeed = value; }
+            get => randomSeed;
+            set => randomSeed = value;
         }
 
         public Material InteriorMaterial
         {
-            get { return interiorMaterial; }
-            set { interiorMaterial = value; }
+            get => interiorMaterial;
+            set => interiorMaterial = value;
         }
 
         public float InteriorUVScale
         {
-            get { return interiorUVScale; }
-            set { interiorUVScale = Mathf.Max(value, MeshFracturer.Epsilon); }
+            get => interiorUVScale;
+            set => interiorUVScale = Mathf.Max(value, Epsilon);
         }
 
         public float PreviewExplosionOffset
         {
-            get { return previewExplosionOffset; }
-            set { previewExplosionOffset = Mathf.Clamp(value, 0f, 2f); }
+            get => previewExplosionOffset;
+            set => previewExplosionOffset = Mathf.Clamp(value, 0f, 2f);
         }
 
         public float TotalMass
         {
-            get { return totalMass; }
-            set { totalMass = Mathf.Max(value, MeshFracturer.Epsilon); }
+            get => totalMass;
+            set => totalMass = Mathf.Max(value, Epsilon);
         }
 
         public bool ConvexColliders
         {
-            get { return convexColliders; }
-            set { convexColliders = value; }
+            get => convexColliders;
+            set => convexColliders = value;
         }
 
         public PhysicsMaterial PhysicMaterial
         {
-            get { return physicMaterial; }
-            set { physicMaterial = value; }
+            get => physicMaterial;
+            set => physicMaterial = value;
         }
 
         public bool EditSeedsManually
         {
-            get { return editSeedsManually; }
-            set { editSeedsManually = value; }
+            get => editSeedsManually;
+            set => editSeedsManually = value;
         }
 
-        public IReadOnlyList<Vector3> VoronoiSeeds
-        {
-            get { return voronoiSeeds; }
-        }
-
-        public FracturedPiece[] PreviewPieces
-        {
-            get { return previewPieces; }
-        }
-
-        public bool HasPreview
-        {
-            get { return previewPieces != null && previewPieces.Length > 0; }
-        }
-
-        public bool HideSourceDuringPreview
-        {
-            get { return hideSourceDuringPreview; }
-        }
+        public IReadOnlyList<Vector3> VoronoiSeeds => voronoiSeeds;
+        public FracturedPiece[] PreviewPieces => previewPieces;
+        public bool HasPreview => previewPieces != null && previewPieces.Length > 0;
+        public bool HideSourceDuringPreview => hideSourceDuringPreview;
 
         private void Awake()
         {
@@ -119,44 +108,32 @@ namespace SmashFast.Fracture
         {
             cellCount = Mathf.Clamp(cellCount, 2, 100);
             previewExplosionOffset = Mathf.Clamp(previewExplosionOffset, 0f, 2f);
-            totalMass = Mathf.Max(totalMass, MeshFracturer.Epsilon);
-            interiorUVScale = Mathf.Max(interiorUVScale, MeshFracturer.Epsilon);
+            totalMass = Mathf.Max(totalMass, Epsilon);
+            interiorUVScale = Mathf.Max(interiorUVScale, Epsilon);
 
             if (!editSeedsManually)
-            {
                 EnsureSeedsMatchSettings(false);
-            }
             else
-            {
                 EnsureSeedListSize();
-            }
 
             if (HasPreview && !Mathf.Approximately(lastAppliedExplosionOffset, previewExplosionOffset))
-            {
                 RefreshPreviewTransforms();
-            }
         }
 
         private void CacheComponents()
         {
             if (meshFilter == null)
-            {
                 meshFilter = GetComponent<MeshFilter>();
-            }
 
             if (meshRenderer == null)
-            {
                 meshRenderer = GetComponent<MeshRenderer>();
-            }
         }
 
         public Bounds GetLocalMeshBounds()
         {
             CacheComponents();
             if (meshFilter == null || meshFilter.sharedMesh == null)
-            {
                 return new Bounds(Vector3.zero, Vector3.one);
-            }
 
             return meshFilter.sharedMesh.bounds;
         }
@@ -168,7 +145,7 @@ namespace SmashFast.Fracture
             bool countMismatch = voronoiSeeds == null || voronoiSeeds.Count != cellCount;
             if (forceRegenerate || countMismatch || voronoiSeeds.Count == 0)
             {
-                Vector3[] generated = MeshFracturer.GenerateSeedPoints(bounds, cellCount, randomSeed);
+                Vector3[] generated = fracturer.GenerateSeedPoints(bounds, cellCount, randomSeed);
                 voronoiSeeds = new List<Vector3>(generated);
             }
         }
@@ -176,34 +153,26 @@ namespace SmashFast.Fracture
         public void EnsureSeedListSize()
         {
             if (voronoiSeeds == null)
-            {
                 voronoiSeeds = new List<Vector3>(cellCount);
-            }
 
             Bounds bounds = GetLocalMeshBounds();
             while (voronoiSeeds.Count < cellCount)
             {
-                Vector3[] generated = MeshFracturer.GenerateSeedPoints(bounds, cellCount, randomSeed + voronoiSeeds.Count);
+                Vector3[] generated = fracturer.GenerateSeedPoints(bounds, cellCount, randomSeed + voronoiSeeds.Count);
                 int need = cellCount - voronoiSeeds.Count;
                 for (int i = 0; i < need && i < generated.Length; i++)
-                {
                     voronoiSeeds.Add(generated[i]);
-                }
             }
 
             while (voronoiSeeds.Count > cellCount)
-            {
                 voronoiSeeds.RemoveAt(voronoiSeeds.Count - 1);
-            }
         }
 
         public void SetSeedPosition(int index, Vector3 localPosition)
         {
             EnsureSeedListSize();
             if (index < 0 || index >= voronoiSeeds.Count)
-            {
                 return;
-            }
 
             voronoiSeeds[index] = localPosition;
         }
@@ -212,9 +181,7 @@ namespace SmashFast.Fracture
         {
             EnsureSeedListSize();
             if (index < 0 || index >= voronoiSeeds.Count)
-            {
                 return Vector3.zero;
-            }
 
             return voronoiSeeds[index];
         }
@@ -223,30 +190,22 @@ namespace SmashFast.Fracture
         {
             CacheComponents();
             if (meshFilter == null || meshFilter.sharedMesh == null)
-            {
                 return false;
-            }
 
             if (!editSeedsManually)
-            {
                 EnsureSeedsMatchSettings(true);
-            }
             else
-            {
                 EnsureSeedListSize();
-            }
 
             DestroyPreviewVisuals();
             RestoreSourceRenderer();
 
             Vector3[] seeds = voronoiSeeds.ToArray();
-            previewPieces = MeshFracturer.FractureVoronoi(meshFilter.sharedMesh, seeds, interiorUVScale);
+            previewPieces = fracturer.FractureVoronoi(meshFilter.sharedMesh, seeds, interiorUVScale);
             hideSourceDuringPreview = previewPieces != null && previewPieces.Length > 0;
 
             if (!HasPreview)
-            {
                 return false;
-            }
 
             BuildPreviewVisuals();
             HideSourceRenderer();
@@ -265,9 +224,7 @@ namespace SmashFast.Fracture
         public void RefreshPreviewTransforms()
         {
             if (!HasPreview || previewPieceTransforms.Count == 0)
-            {
                 return;
-            }
 
             Vector3 meshCenter = GetLocalMeshBounds().center;
             int count = Mathf.Min(previewPieces.Length, previewPieceTransforms.Count);
@@ -275,9 +232,7 @@ namespace SmashFast.Fracture
             {
                 Transform pieceTransform = previewPieceTransforms[i];
                 if (pieceTransform == null)
-                {
                     continue;
-                }
 
                 pieceTransform.localPosition = ComputeExplodedLocalPosition(previewPieces[i].LocalCentroid, meshCenter);
             }
@@ -289,9 +244,7 @@ namespace SmashFast.Fracture
         {
             CacheComponents();
             if (meshRenderer == null)
-            {
                 return;
-            }
 
             cachedRendererEnabled = meshRenderer.enabled;
             meshRenderer.enabled = false;
@@ -301,14 +254,10 @@ namespace SmashFast.Fracture
         {
             CacheComponents();
             if (meshRenderer == null)
-            {
                 return;
-            }
 
             if (hideSourceDuringPreview)
-            {
                 meshRenderer.enabled = cachedRendererEnabled;
-            }
         }
 
         private void BuildPreviewVisuals()
@@ -332,9 +281,7 @@ namespace SmashFast.Fracture
             {
                 FracturedPiece piece = previewPieces[i];
                 if (piece == null || piece.Mesh == null)
-                {
                     continue;
-                }
 
                 piece.Mesh.hideFlags = HideFlags.HideAndDontSave;
 
@@ -372,27 +319,15 @@ namespace SmashFast.Fracture
                 DestroyPreviewObject(previewRoot.gameObject);
                 previewRoot = null;
             }
-            else
-            {
-                Transform existing = transform.Find(PreviewRootName);
-                if (existing != null)
-                {
-                    DestroyPreviewObject(existing.gameObject);
-                }
-            }
 
             if (!destroyMeshes || previewPieces == null)
-            {
                 return;
-            }
 
             for (int i = 0; i < previewPieces.Length; i++)
             {
                 FracturedPiece piece = previewPieces[i];
                 if (piece == null || piece.Mesh == null)
-                {
                     continue;
-                }
 
                 DestroyPreviewObject(piece.Mesh);
                 piece.Mesh = null;
@@ -402,72 +337,54 @@ namespace SmashFast.Fracture
         private Vector3 ComputeExplodedLocalPosition(Vector3 localCentroid, Vector3 meshCenter)
         {
             Vector3 fromCenter = localCentroid - meshCenter;
-            if (fromCenter.sqrMagnitude <= MeshFracturer.Epsilon * MeshFracturer.Epsilon)
-            {
-                fromCenter = Vector3.up * MeshFracturer.Epsilon;
-            }
+            if (fromCenter.sqrMagnitude <= EpsilonSqr)
+                fromCenter = Vector3.up * Epsilon;
 
             return localCentroid + fromCenter.normalized * previewExplosionOffset;
         }
 
-        private static void ApplyPreviewHideFlags(GameObject target)
+        private void ApplyPreviewHideFlags(GameObject target)
         {
             target.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild | HideFlags.NotEditable;
         }
 
-        private static void DestroyPreviewObject(Object target)
+        private void DestroyPreviewObject(UnityEngine.Object target)
         {
             if (target == null)
-            {
                 return;
-            }
 
             if (Application.isPlaying)
-            {
-                Object.Destroy(target);
-            }
+                Destroy(target);
             else
-            {
-                Object.DestroyImmediate(target);
-            }
+                DestroyImmediate(target);
         }
 
-        private static void EnsurePreviewMaterials(Material[] materials)
+        private void EnsurePreviewMaterials(Material[] materials)
         {
             if (materials == null || materials.Length == 0)
-            {
                 return;
-            }
 
             Material fallback = null;
             for (int i = 0; i < materials.Length; i++)
             {
                 if (materials[i] != null)
-                {
                     continue;
-                }
 
                 if (fallback == null)
-                {
                     fallback = ResolveFallbackMaterial();
-                }
 
                 materials[i] = fallback;
             }
         }
 
-        private static Material ResolveFallbackMaterial()
+        private Material ResolveFallbackMaterial()
         {
             Shader shader = Shader.Find("Universal Render Pipeline/Lit");
             if (shader == null)
-            {
                 shader = Shader.Find("Standard");
-            }
 
             if (shader == null)
-            {
                 shader = Shader.Find("Hidden/InternalErrorShader");
-            }
 
             return new Material(shader)
             {
@@ -481,20 +398,14 @@ namespace SmashFast.Fracture
         {
             CacheComponents();
             if (meshFilter == null || meshFilter.sharedMesh == null)
-            {
-                return System.Array.Empty<FracturedPiece>();
-            }
+                return Array.Empty<FracturedPiece>();
 
             if (!editSeedsManually)
-            {
                 EnsureSeedsMatchSettings(true);
-            }
             else
-            {
                 EnsureSeedListSize();
-            }
 
-            return MeshFracturer.FractureVoronoi(meshFilter.sharedMesh, voronoiSeeds.ToArray(), interiorUVScale);
+            return fracturer.FractureVoronoi(meshFilter.sharedMesh, voronoiSeeds.ToArray(), interiorUVScale);
         }
 
         public Material[] BuildPieceMaterials()
@@ -502,9 +413,7 @@ namespace SmashFast.Fracture
             CacheComponents();
             Material exterior = null;
             if (meshRenderer != null && meshRenderer.sharedMaterials != null && meshRenderer.sharedMaterials.Length > 0)
-            {
                 exterior = meshRenderer.sharedMaterials[0];
-            }
 
             Material interior = interiorMaterial != null ? interiorMaterial : exterior;
             return new Material[] { exterior, interior };
@@ -513,22 +422,18 @@ namespace SmashFast.Fracture
         public float[] ComputeMassDistribution(FracturedPiece[] pieces)
         {
             if (pieces == null || pieces.Length == 0)
-            {
-                return System.Array.Empty<float>();
-            }
+                return Array.Empty<float>();
 
             float totalVolume = 0f;
             for (int i = 0; i < pieces.Length; i++)
-            {
-                totalVolume += Mathf.Max(pieces[i].VolumeEstimate, MeshFracturer.Epsilon);
-            }
+                totalVolume += Mathf.Max(pieces[i].VolumeEstimate, Epsilon);
 
             float[] masses = new float[pieces.Length];
-            float safeTotalMass = Mathf.Max(totalMass, MeshFracturer.Epsilon);
+            float safeTotalMass = Mathf.Max(totalMass, Epsilon);
             for (int i = 0; i < pieces.Length; i++)
             {
                 float ratio = pieces[i].VolumeEstimate / totalVolume;
-                masses[i] = Mathf.Max(safeTotalMass * ratio, MeshFracturer.Epsilon);
+                masses[i] = Mathf.Max(safeTotalMass * ratio, Epsilon);
             }
 
             return masses;
@@ -542,14 +447,10 @@ namespace SmashFast.Fracture
             if (!editSeedsManually)
             {
                 if (voronoiSeeds == null || voronoiSeeds.Count != cellCount)
-                {
                     EnsureSeedsMatchSettings(false);
-                }
             }
             else
-            {
                 EnsureSeedListSize();
-            }
 
             Matrix4x4 localToWorld = transform.localToWorldMatrix;
             Gizmos.matrix = localToWorld;
@@ -572,9 +473,7 @@ namespace SmashFast.Fracture
         private void DrawBisectorPlanes(Bounds localBounds)
         {
             if (voronoiSeeds == null || voronoiSeeds.Count < 2)
-            {
                 return;
-            }
 
             Gizmos.color = new Color(1f, 0.35f, 0.1f, 0.65f);
             int seedCount = voronoiSeeds.Count;
@@ -582,11 +481,9 @@ namespace SmashFast.Fracture
             {
                 for (int j = i + 1; j < seedCount; j++)
                 {
-                    MeshFracturer.GetBisectorPlane(voronoiSeeds[i], voronoiSeeds[j], out Vector3 planePoint, out Vector3 planeNormal);
-                    if (!MeshFracturer.TryIntersectPlaneWithBounds(localBounds, planePoint, planeNormal, gizmoPlaneLoop))
-                    {
+                    fracturer.GetBisectorPlane(voronoiSeeds[i], voronoiSeeds[j], out Vector3 planePoint, out Vector3 planeNormal);
+                    if (!fracturer.TryIntersectPlaneWithBounds(localBounds, planePoint, planeNormal, gizmoPlaneLoop))
                         continue;
-                    }
 
                     for (int p = 0; p < gizmoPlaneLoop.Count; p++)
                     {

@@ -57,22 +57,9 @@ namespace SmashFast.Data
 
         public bool IsTarget()
         {
-            if (materialType == BlockMaterialType.TableFoundation)
-            {
-                return false;
-            }
-
-            if (shapeRole == BlockShapeRole.FoundationTable)
-            {
-                return false;
-            }
-
-            if (isKinematicBase)
-            {
-                return false;
-            }
-
-            return true;
+            return materialType != BlockMaterialType.TableFoundation
+                && shapeRole != BlockShapeRole.FoundationTable
+                && !isKinematicBase;
         }
     }
 }

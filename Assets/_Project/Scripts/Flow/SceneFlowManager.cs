@@ -10,40 +10,28 @@ namespace SmashFast.Flow
 {
     public class SceneFlowManager : ISceneFlowManager
     {
-        private readonly IUniversalObjectPool objectPool;
-        private readonly UIManager uiManager;
+        private readonly IUniversalObjectPool pool;
+        private readonly UIManager ui;
         private readonly IPlayerProgressService progress;
         private bool isLoading;
 
-        public SceneFlowManager(
-            IUniversalObjectPool objectPool,
-            UIManager uiManager,
-            IPlayerProgressService progress)
+        public SceneFlowManager(IUniversalObjectPool pool, UIManager ui, IPlayerProgressService progress)
         {
-            this.objectPool = objectPool;
-            this.uiManager = uiManager;
+            this.pool = pool;
+            this.ui = ui;
             this.progress = progress;
         }
 
         public async UniTask LoadMainMenuAsync()
         {
             if (isLoading)
-            {
                 return;
-            }
 
             isLoading = true;
             try
             {
-                PrepareForSceneChange();
-                bool loaded = await LoadSceneAsync(SceneNames.MainMenuScene);
-                if (!loaded)
-                {
-                    return;
-                }
-
-                uiManager.RemoveDuplicateEventSystems();
-                uiManager.ShowPanel<MainMenuPanel>();
+                if (await LoadSceneAsync(SceneNames.MainMenuScene))
+                    ui.ShowPanel<MainMenuPanel>();
             }
             finally
             {
@@ -51,55 +39,35 @@ namespace SmashFast.Flow
             }
         }
 
-        public async UniTask LoadGameSceneAsync(int levelNumber)
+        public async UniTask LoadGameSceneAsync(int level)
         {
             if (isLoading)
-            {
                 return;
-            }
 
             isLoading = true;
             try
             {
-                progress.SetSelectedLevel(levelNumber);
-                PrepareForSceneChange();
-                bool loaded = await LoadSceneAsync(SceneNames.GameScene);
-                if (!loaded)
-                {
-                    return;
-                }
-
-                uiManager.RemoveDuplicateEventSystems();
-                uiManager.ShowPanel<GameHudPanel>();
+                progress.SetSelectedLevel(level);
+                if (await LoadSceneAsync(SceneNames.GameScene))
+                    ui.ShowPanel<GameHudPanel>();
             }
             finally
             {
                 isLoading = false;
-            }
-        }
-
-        private void PrepareForSceneChange()
-        {
-            if (objectPool != null)
-            {
-                objectPool.DespawnAllActive();
-            }
-
-            if (uiManager != null)
-            {
-                uiManager.HideAllPanels();
             }
         }
 
         private async UniTask<bool> LoadSceneAsync(string sceneName)
         {
+            pool.DespawnAllActive();
+            ui.HideAllPanels();
+
             AsyncOperation operation = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single);
             if (operation == null)
-            {
                 return false;
-            }
 
             await operation.ToUniTask();
+            ui.RemoveDuplicateEventSystems();
             return true;
         }
     }

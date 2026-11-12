@@ -9,26 +9,17 @@ namespace SmashFast.Data
         [SerializeField] private TextAsset levelsJson;
 
         private readonly JsonLevelRepository repository = new JsonLevelRepository();
-        private bool repositoryReady;
+        private bool isReady;
 
-        public BlockCatalogSO BlockCatalog
-        {
-            get
-            {
-                return blockCatalog;
-            }
-        }
+        public BlockCatalogSO BlockCatalog => blockCatalog;
 
         public TextAsset LevelsJson
         {
-            get
-            {
-                return levelsJson;
-            }
+            get => levelsJson;
             set
             {
                 levelsJson = value;
-                repositoryReady = false;
+                isReady = false;
             }
         }
 
@@ -36,71 +27,40 @@ namespace SmashFast.Data
         {
             get
             {
-                EnsureRepository();
+                Load();
                 return repository;
             }
         }
 
-        public int LevelCount
-        {
-            get
-            {
-                EnsureRepository();
-                return repository.LevelCount;
-            }
-        }
+        public int LevelCount => Repository.LevelCount;
 
-        public LevelData GetLevelDataForInfiniteIndex(int displayLevelNumber)
-        {
-            EnsureRepository();
-            return repository.GetLevelDataForInfiniteIndex(displayLevelNumber);
-        }
+        private void OnEnable() => isReady = false;
 
-        public int GetCycleIndex(int displayLevelNumber)
-        {
-            EnsureRepository();
-            return repository.GetCycleIndex(displayLevelNumber);
-        }
+        public LevelData GetLevelDataForInfiniteIndex(int levelNumber) => Repository.GetLevelDataForInfiniteIndex(levelNumber);
 
-        public LevelData GetLevelByIndex(int levelIndex)
-        {
-            EnsureRepository();
-            return repository.GetOrCreateLevelData(levelIndex);
-        }
+        public int GetCycleIndex(int levelNumber) => Repository.GetCycleIndex(levelNumber);
 
-        private void OnEnable()
-        {
-            repositoryReady = false;
-        }
+        public LevelData GetLevelByIndex(int levelIndex) => Repository.GetOrCreateLevelData(levelIndex);
 
-        public void Invalidate()
-        {
-            repositoryReady = false;
-        }
+        public void Invalidate() => isReady = false;
 
         public void ReloadFromText(string json)
         {
             repository.LoadFromJson(json);
-            repositoryReady = true;
+            isReady = true;
         }
 
-        private void EnsureRepository()
+        private void Load()
         {
-            if (repositoryReady)
-            {
+            if (isReady)
                 return;
-            }
 
             if (levelsJson != null && !string.IsNullOrEmpty(levelsJson.text))
-            {
                 repository.LoadFromJson(levelsJson.text);
-            }
             else
-            {
                 repository.LoadFromResources();
-            }
 
-            repositoryReady = true;
+            isReady = true;
         }
     }
 }

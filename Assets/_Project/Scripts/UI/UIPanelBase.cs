@@ -9,12 +9,12 @@ namespace SmashFast.UI
         [SerializeField] private CanvasGroup canvasGroup;
         [SerializeField, Min(0.01f)] private float fadeDuration = 0.16f;
 
-        private PanelFadeRunner fadeRunner;
-        private bool visualsPrepared;
+        private readonly PanelFadeRunner fader = new PanelFadeRunner();
+        private bool isPrepared;
 
         public UniTask ShowAsync()
         {
-            EnsureVisuals();
+            Prepare();
             if (gameObject.activeSelf && canvasGroup.alpha >= 0.999f)
             {
                 canvasGroup.interactable = true;
@@ -23,29 +23,21 @@ namespace SmashFast.UI
                 return UniTask.CompletedTask;
             }
 
-            return fadeRunner.Play(this, canvasGroup, 1f, fadeDuration, true, destroyCancellationToken);
+            return fader.Play(this, canvasGroup, 1f, fadeDuration, true, destroyCancellationToken);
         }
 
         public UniTask HideAsync()
         {
-            EnsureVisuals();
+            Prepare();
             if (!gameObject.activeSelf)
-            {
                 return UniTask.CompletedTask;
-            }
 
-            return fadeRunner.Play(this, canvasGroup, 0f, fadeDuration, false, destroyCancellationToken);
+            return fader.Play(this, canvasGroup, 0f, fadeDuration, false, destroyCancellationToken);
         }
 
-        internal void RaiseOpened()
-        {
-            OnPanelOpened();
-        }
+        internal void RaiseOpened() => OnPanelOpened();
 
-        internal void RaiseClosed()
-        {
-            OnPanelClosed();
-        }
+        internal void RaiseClosed() => OnPanelClosed();
 
         protected virtual void OnPanelOpened()
         {
@@ -55,29 +47,15 @@ namespace SmashFast.UI
         {
         }
 
-        private void EnsureVisuals()
+        private void Prepare()
         {
-            if (canvasGroup == null)
-            {
-                canvasGroup = GetComponent<CanvasGroup>();
-            }
-
-            if (canvasGroup == null)
-            {
+            if (canvasGroup == null && !TryGetComponent(out canvasGroup))
                 canvasGroup = gameObject.AddComponent<CanvasGroup>();
-            }
 
-            if (fadeRunner == null)
-            {
-                fadeRunner = new PanelFadeRunner();
-            }
-
-            if (visualsPrepared || fadeRunner.IsRunning)
-            {
+            if (isPrepared || fader.IsRunning)
                 return;
-            }
 
-            visualsPrepared = true;
+            isPrepared = true;
             canvasGroup.alpha = 0f;
             canvasGroup.interactable = false;
             canvasGroup.blocksRaycasts = false;
@@ -87,7 +65,7 @@ namespace SmashFast.UI
 
     internal class PanelFadeRunner : IPlayerLoopItem
     {
-        private UIPanelBase owner;
+        private UIPanelBase panel;
         private CanvasGroup group;
         private CancellationToken token;
         private AutoResetUniTaskCompletionSource source;
@@ -95,53 +73,36 @@ namespace SmashFast.UI
         private float toAlpha;
         private float duration;
         private float elapsed;
-        private bool opening;
-        private bool running;
-        private bool queued;
+        private bool isOpening;
+        private bool isQueued;
 
-        internal bool IsRunning
-        {
-            get
-            {
-                return running;
-            }
-        }
+        internal bool IsRunning { get; private set; }
 
-        public UniTask Play(
-            UIPanelBase panel,
-            CanvasGroup canvasGroup,
-            float targetAlpha,
-            float durationSeconds,
-            bool open,
-            CancellationToken cancellationToken)
+        public UniTask Play(UIPanelBase panel, CanvasGroup group, float targetAlpha, float duration, bool open, CancellationToken token)
         {
-            ReleaseSource();
-            owner = panel;
-            group = canvasGroup;
-            token = cancellationToken;
-            opening = open;
-            fromAlpha = canvasGroup != null ? canvasGroup.alpha : 0f;
+            Complete();
+            this.panel = panel;
+            this.group = group;
+            this.token = token;
+            this.duration = Mathf.Max(0.01f, duration);
+            isOpening = open;
+            fromAlpha = group != null ? group.alpha : 0f;
             toAlpha = targetAlpha;
-            duration = durationSeconds < 0.01f ? 0.01f : durationSeconds;
             elapsed = 0f;
             source = AutoResetUniTaskCompletionSource.Create();
-            running = true;
-            if (opening)
+            IsRunning = true;
+
+            group.interactable = open;
+            group.blocksRaycasts = open;
+            if (open)
             {
-                owner.gameObject.SetActive(true);
-                group.blocksRaycasts = true;
-                group.interactable = true;
-                owner.RaiseOpened();
-            }
-            else
-            {
-                group.interactable = false;
-                group.blocksRaycasts = false;
+                panel.gameObject.SetActive(true);
+                panel.RaiseOpened();
             }
 
-            if (!queued)
+            if (!isQueued)
             {
-                queued = true;
+                isQueued = true;
                 PlayerLoopHelper.AddAction(PlayerLoopTiming.Update, this);
             }
 
@@ -150,76 +111,51 @@ namespace SmashFast.UI
 
         public bool MoveNext()
         {
-            if (!running || group == null || owner == null)
+            if (!IsRunning || group == null || panel == null || token.IsCancellationRequested)
             {
-                FinishCanceled();
-                return false;
-            }
-
-            if (token.IsCancellationRequested)
-            {
-                FinishCanceled();
+                Cancel();
                 return false;
             }
 
             elapsed += Time.unscaledDeltaTime;
-            float progress = elapsed / duration;
-            if (progress > 1f)
-            {
-                progress = 1f;
-            }
-
+            float progress = Mathf.Min(1f, elapsed / duration);
             group.alpha = Mathf.Lerp(fromAlpha, toAlpha, progress);
             if (progress < 1f)
-            {
                 return true;
-            }
 
             group.alpha = toAlpha;
-            if (opening)
+            group.interactable = isOpening;
+            group.blocksRaycasts = isOpening;
+            if (!isOpening)
             {
-                group.interactable = true;
-                group.blocksRaycasts = true;
-            }
-            else
-            {
-                group.interactable = false;
-                group.blocksRaycasts = false;
-                owner.RaiseClosed();
-                owner.gameObject.SetActive(false);
+                panel.RaiseClosed();
+                panel.gameObject.SetActive(false);
             }
 
-            FinishSuccess();
+            Stop();
+            Complete();
             return false;
         }
 
-        private void ReleaseSource()
+        private void Stop()
+        {
+            IsRunning = false;
+            isQueued = false;
+        }
+
+        private void Complete()
         {
             AutoResetUniTaskCompletionSource previous = source;
             source = null;
-            if (previous != null)
-            {
-                previous.TrySetResult();
-            }
+            previous?.TrySetResult();
         }
 
-        private void FinishSuccess()
+        private void Cancel()
         {
-            running = false;
-            queued = false;
-            ReleaseSource();
-        }
-
-        private void FinishCanceled()
-        {
-            running = false;
-            queued = false;
+            Stop();
             AutoResetUniTaskCompletionSource previous = source;
             source = null;
-            if (previous != null)
-            {
-                previous.TrySetCanceled(token);
-            }
+            previous?.TrySetCanceled(token);
         }
     }
 }

@@ -16,174 +16,73 @@ namespace SmashFast.Data
         [SerializeField] private int parAmmo;
         [SerializeField] private List<BlockPlacementData> placements = new List<BlockPlacementData>(64);
 
-        [System.NonSerialized] private BlockFootprint blockFootprint;
+        [NonSerialized] private BlockFootprint footprint;
 
-        private BlockFootprint Footprint
-        {
-            get
-            {
-                if (blockFootprint == null)
-                {
-                    blockFootprint = new BlockFootprint();
-                }
-
-                return blockFootprint;
-            }
-        }
+        private BlockFootprint Footprint => footprint ??= new BlockFootprint();
+        private List<BlockPlacementData> Placements => placements ??= new List<BlockPlacementData>(64);
 
         public int LevelIndex
         {
-            get
-            {
-                return levelIndex;
-            }
-            set
-            {
-                levelIndex = value < 0 ? 0 : value;
-            }
+            get => levelIndex;
+            set => levelIndex = Mathf.Max(0, value);
         }
 
         public int MaxAmmo
         {
-            get
-            {
-                return maxAmmo;
-            }
-            set
-            {
-                maxAmmo = value < 0 ? 0 : value;
-            }
-        }
-
-        public Vector3Int GridDimensions
-        {
-            get
-            {
-                return new Vector3Int(
-                    Mathf.Max(1, gridDimensions.x),
-                    Mathf.Max(1, gridDimensions.y),
-                    Mathf.Max(1, gridDimensions.z));
-            }
-            set
-            {
-                gridDimensions = new Vector3Int(
-                    Mathf.Max(1, value.x),
-                    Mathf.Max(1, value.y),
-                    Mathf.Max(1, value.z));
-            }
-        }
-
-        public Vector3 CellSize
-        {
-            get
-            {
-                return new Vector3(
-                    Mathf.Max(0.01f, cellSize.x),
-                    Mathf.Max(0.01f, cellSize.y),
-                    Mathf.Max(0.01f, cellSize.z));
-            }
-            set
-            {
-                cellSize = new Vector3(
-                    Mathf.Max(0.01f, value.x),
-                    Mathf.Max(0.01f, value.y),
-                    Mathf.Max(0.01f, value.z));
-            }
-        }
-
-        public Vector3 OriginOffset
-        {
-            get
-            {
-                return originOffset;
-            }
-            set
-            {
-                originOffset = value;
-            }
-        }
-
-        public float FallEliminationY
-        {
-            get
-            {
-                return fallEliminationY;
-            }
-            set
-            {
-                fallEliminationY = value;
-            }
+            get => maxAmmo;
+            set => maxAmmo = Mathf.Max(0, value);
         }
 
         public int ParAmmo
         {
-            get
-            {
-                return parAmmo < 0 ? 0 : parAmmo;
-            }
-            set
-            {
-                parAmmo = value < 0 ? 0 : value;
-            }
+            get => Mathf.Max(0, parAmmo);
+            set => parAmmo = Mathf.Max(0, value);
         }
 
-        public int PlacementCount
+        public Vector3Int GridDimensions
         {
-            get
-            {
-                return Placements.Count;
-            }
+            get => Vector3Int.Max(gridDimensions, Vector3Int.one);
+            set => gridDimensions = Vector3Int.Max(value, Vector3Int.one);
         }
 
-        private List<BlockPlacementData> Placements
+        public Vector3 CellSize
         {
-            get
+            get => Vector3.Max(cellSize, Vector3.one * 0.01f);
+            set => cellSize = Vector3.Max(value, Vector3.one * 0.01f);
+        }
+
+        public Vector3 OriginOffset
+        {
+            get => originOffset;
+            set => originOffset = value;
+        }
+
+        public float FallEliminationY
+        {
+            get => fallEliminationY;
+            set => fallEliminationY = value;
+        }
+
+        public int PlacementCount => Placements.Count;
+
+        public bool IsInsideGrid(Vector3Int cell)
+        {
+            Vector3Int size = GridDimensions;
+            return cell.x >= 0 && cell.y >= 0 && cell.z >= 0
+                && cell.x < size.x && cell.y < size.y && cell.z < size.z;
+        }
+
+        public bool HasBlockAt(Vector3Int cell) => TryGetPlacement(cell, out _);
+
+        public bool TryGetPlacement(Vector3Int cell, out BlockPlacementData placement)
+        {
+            foreach (BlockPlacementData candidate in Placements)
             {
-                if (placements == null)
+                if (candidate.gridPosition == cell)
                 {
-                    placements = new List<BlockPlacementData>(64);
+                    placement = candidate;
+                    return true;
                 }
-
-                return placements;
-            }
-        }
-
-        public bool IsInsideGrid(Vector3Int gridPosition)
-        {
-            Vector3Int dimensions = GridDimensions;
-            if (gridPosition.x < 0 || gridPosition.y < 0 || gridPosition.z < 0)
-            {
-                return false;
-            }
-
-            if (gridPosition.x >= dimensions.x || gridPosition.y >= dimensions.y || gridPosition.z >= dimensions.z)
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        public bool HasBlockAt(Vector3Int gridPosition)
-        {
-            BlockPlacementData placement;
-            return TryGetPlacement(gridPosition, out placement);
-        }
-
-        public bool TryGetPlacement(Vector3Int gridPosition, out BlockPlacementData placement)
-        {
-            List<BlockPlacementData> list = Placements;
-            int count = list.Count;
-            for (int i = 0; i < count; i++)
-            {
-                BlockPlacementData candidate = list[i];
-                if (candidate.gridPosition != gridPosition)
-                {
-                    continue;
-                }
-
-                placement = candidate;
-                return true;
             }
 
             placement = default;
@@ -192,28 +91,15 @@ namespace SmashFast.Data
 
         public bool TryGetPlacementByIndex(int index, out BlockPlacementData placement)
         {
-            List<BlockPlacementData> list = Placements;
-            if (index < 0 || index >= list.Count)
-            {
-                placement = default;
-                return false;
-            }
-
-            placement = list[index];
-            return true;
+            bool isValid = index >= 0 && index < Placements.Count;
+            placement = isValid ? Placements[index] : default;
+            return isValid;
         }
 
         public bool TryAddPlacement(in BlockPlacementData placement)
         {
-            if (!IsInsideGrid(placement.gridPosition))
-            {
+            if (!IsInsideGrid(placement.gridPosition) || HasBlockAt(placement.gridPosition))
                 return false;
-            }
-
-            if (HasBlockAt(placement.gridPosition))
-            {
-                return false;
-            }
 
             Placements.Add(placement);
             return true;
@@ -222,120 +108,64 @@ namespace SmashFast.Data
         public bool TrySetPlacement(in BlockPlacementData placement)
         {
             if (!IsInsideGrid(placement.gridPosition))
-            {
                 return false;
-            }
 
             List<BlockPlacementData> list = Placements;
             bool replaced = false;
             for (int i = list.Count - 1; i >= 0; i--)
             {
                 if (list[i].gridPosition != placement.gridPosition)
+                    continue;
+
+                if (replaced)
                 {
+                    list.RemoveAt(i);
                     continue;
                 }
 
-                if (!replaced)
-                {
-                    list[i] = placement;
-                    replaced = true;
-                }
-                else
-                {
-                    list.RemoveAt(i);
-                }
+                list[i] = placement;
+                replaced = true;
             }
 
             if (!replaced)
-            {
                 list.Add(placement);
-            }
 
             return true;
         }
 
-        public bool TryRemoveAt(Vector3Int gridPosition)
+        public bool TryRemoveAt(Vector3Int cell)
         {
-            List<BlockPlacementData> list = Placements;
-            bool removed = false;
-            for (int i = list.Count - 1; i >= 0; i--)
-            {
-                if (list[i].gridPosition != gridPosition)
-                {
-                    continue;
-                }
-
-                list.RemoveAt(i);
-                removed = true;
-            }
-
-            return removed;
+            Vector3Int target = cell;
+            return Placements.RemoveAll(placement => placement.gridPosition == target) > 0;
         }
 
-        public void ClearPlacements()
-        {
-            Placements.Clear();
-        }
+        public void ClearPlacements() => Placements.Clear();
 
         public int ClearLayer(int layerZ, BlockCatalogSO catalog = null)
         {
-            List<BlockPlacementData> list = Placements;
-            int removed = 0;
-            for (int i = list.Count - 1; i >= 0; i--)
-            {
-                if (!IntersectsLayer(list[i], layerZ, catalog))
-                {
-                    continue;
-                }
-
-                list.RemoveAt(i);
-                removed++;
-            }
-
-            return removed;
+            return Placements.RemoveAll(placement => IntersectsLayer(placement, layerZ, catalog));
         }
 
-        public int CopyLayer(int sourceLayerZ, int destinationLayerZ, BlockCatalogSO catalog = null)
+        public int CopyLayer(int sourceZ, int targetZ, BlockCatalogSO catalog = null)
         {
-            if (sourceLayerZ == destinationLayerZ)
-            {
+            Vector3Int size = GridDimensions;
+            if (sourceZ == targetZ || sourceZ < 0 || targetZ < 0 || sourceZ >= size.z || targetZ >= size.z)
                 return 0;
-            }
-
-            Vector3Int dimensions = GridDimensions;
-            if (sourceLayerZ < 0 || destinationLayerZ < 0 || sourceLayerZ >= dimensions.z || destinationLayerZ >= dimensions.z)
-            {
-                return 0;
-            }
 
             List<BlockPlacementData> list = Placements;
-            for (int i = list.Count - 1; i >= 0; i--)
-            {
-                bool hitsDestination = IntersectsLayer(list[i], destinationLayerZ, catalog);
-                bool hitsSource = IntersectsLayer(list[i], sourceLayerZ, catalog);
-                if (!hitsDestination || hitsSource)
-                {
-                    continue;
-                }
+            list.RemoveAll(placement => IntersectsLayer(placement, targetZ, catalog) && !IntersectsLayer(placement, sourceZ, catalog));
 
-                list.RemoveAt(i);
-            }
-
-            int delta = destinationLayerZ - sourceLayerZ;
+            int offset = targetZ - sourceZ;
             int count = list.Count;
             int copied = 0;
             for (int i = 0; i < count; i++)
             {
-                BlockPlacementData source = list[i];
-                if (!IntersectsLayer(source, sourceLayerZ, catalog))
-                {
+                BlockPlacementData copy = list[i];
+                if (!IntersectsLayer(copy, sourceZ, catalog))
                     continue;
-                }
 
-                Vector3Int position = source.gridPosition;
-                position.z += delta;
-                source.gridPosition = position;
-                list.Add(source);
+                copy.gridPosition.z += offset;
+                list.Add(copy);
                 copied++;
             }
 
@@ -344,17 +174,11 @@ namespace SmashFast.Data
 
         public int CountLayer(int layerZ, BlockCatalogSO catalog = null)
         {
-            List<BlockPlacementData> list = Placements;
-            int count = list.Count;
             int total = 0;
-            for (int i = 0; i < count; i++)
+            foreach (BlockPlacementData placement in Placements)
             {
-                if (!IntersectsLayer(list[i], layerZ, catalog))
-                {
-                    continue;
-                }
-
-                total++;
+                if (IntersectsLayer(placement, layerZ, catalog))
+                    total++;
             }
 
             return total;
@@ -362,99 +186,41 @@ namespace SmashFast.Data
 
         public int RemoveOutOfBounds(BlockCatalogSO catalog = null)
         {
-            List<BlockPlacementData> list = Placements;
-            int removed = 0;
-            for (int i = list.Count - 1; i >= 0; i--)
-            {
-                Vector3Int size = GetEffectiveSize(list[i], catalog);
-                if (IsFootprintInsideGrid(list[i].gridPosition, size))
-                {
-                    continue;
-                }
-
-                list.RemoveAt(i);
-                removed++;
-            }
-
-            return removed;
-        }
-
-        public static bool HasCustomSize(in BlockPlacementData placement)
-        {
-            return placement.customSize.x > 0
-                && placement.customSize.y > 0
-                && placement.customSize.z > 0;
+            return Placements.RemoveAll(placement => !IsFootprintInsideGrid(placement.gridPosition, GetEffectiveSize(placement, catalog)));
         }
 
         public Vector3Int GetSizeInCells(in BlockPlacementData placement, BlockCatalogSO catalog)
         {
             if (HasCustomSize(placement))
-            {
                 return Footprint.ClampSize(placement.customSize);
-            }
 
-            BlockDefinition definition;
-            if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition))
-            {
+            if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out BlockDefinition definition))
                 return Footprint.ClampSize(definition.sizeInCells);
-            }
 
             return Vector3Int.one;
         }
 
         public Vector3Int GetEffectiveSize(in BlockPlacementData placement, BlockCatalogSO catalog)
         {
-            Vector3Int sizeInCells = GetSizeInCells(placement, catalog);
-            return Footprint.GetEffectiveSize(sizeInCells, placement.rotationEuler);
+            return Footprint.GetEffectiveSize(GetSizeInCells(placement, catalog), placement.rotationEuler);
         }
 
-        public PlacementValidationStatus ValidatePlacement(Vector3Int anchorCell, Vector3Int effectiveSize, BlockCatalogSO catalog = null)
+        public PlacementValidationStatus ValidatePlacement(Vector3Int anchor, Vector3Int effectiveSize, BlockCatalogSO catalog = null)
         {
-            return ValidatePlacement(anchorCell, effectiveSize, catalog, false, Vector3Int.zero);
+            return ValidatePlacement(anchor, effectiveSize, catalog, false, Vector3Int.zero);
         }
 
-        public PlacementValidationStatus ValidatePlacementIgnoring(
-            Vector3Int anchorCell,
-            Vector3Int effectiveSize,
-            BlockCatalogSO catalog,
-            Vector3Int ignoredAnchor)
+        public PlacementValidationStatus ValidatePlacementIgnoring(Vector3Int anchor, Vector3Int effectiveSize, BlockCatalogSO catalog, Vector3Int ignoredAnchor)
         {
-            return ValidatePlacement(anchorCell, effectiveSize, catalog, true, ignoredAnchor);
-        }
-
-        private PlacementValidationStatus ValidatePlacement(
-            Vector3Int anchorCell,
-            Vector3Int effectiveSize,
-            BlockCatalogSO catalog,
-            bool ignoreAnchor,
-            Vector3Int ignoredAnchor)
-        {
-            Vector3Int size = Footprint.ClampSize(effectiveSize);
-            if (!IsFootprintInsideGrid(anchorCell, size))
-            {
-                return PlacementValidationStatus.InvalidOutOfBounds;
-            }
-
-            if (OverlapsAny(anchorCell, size, catalog, ignoreAnchor, ignoredAnchor))
-            {
-                return PlacementValidationStatus.ValidOverwrite;
-            }
-
-            return PlacementValidationStatus.ValidEmpty;
+            return ValidatePlacement(anchor, effectiveSize, catalog, true, ignoredAnchor);
         }
 
         public bool TryGetBlockAt(Vector3Int cell, BlockCatalogSO catalog, out BlockPlacementData placement, out bool isAnchorCell)
         {
-            List<BlockPlacementData> list = Placements;
-            int count = list.Count;
-            for (int i = 0; i < count; i++)
+            foreach (BlockPlacementData candidate in Placements)
             {
-                BlockPlacementData candidate = list[i];
-                Vector3Int size = GetEffectiveSize(candidate, catalog);
-                if (!Footprint.ContainsCell(candidate.gridPosition, size, cell))
-                {
+                if (!Footprint.ContainsCell(candidate.gridPosition, GetEffectiveSize(candidate, catalog), cell))
                     continue;
-                }
 
                 placement = candidate;
                 isAnchorCell = candidate.gridPosition == cell;
@@ -471,14 +237,10 @@ namespace SmashFast.Data
             Vector3Int size = Footprint.ClampSize(effectiveSize);
             PlacementValidationStatus status = ValidatePlacement(placement.gridPosition, size, catalog);
             if (status == PlacementValidationStatus.InvalidOutOfBounds)
-            {
                 return false;
-            }
 
             if (status == PlacementValidationStatus.ValidOverwrite)
-            {
                 RemoveOverlapping(placement.gridPosition, size, catalog);
-            }
 
             Placements.Add(placement);
             return true;
@@ -486,103 +248,48 @@ namespace SmashFast.Data
 
         public void GetOccupiedGridBounds(BlockCatalogSO catalog, out Vector3 minGrid, out Vector3 maxGrid)
         {
-            int minX = 0;
-            int minY = 0;
-            int minZ = 0;
-            int maxX = 0;
-            int maxY = 0;
-            int maxZ = 0;
-            bool any = false;
             List<BlockPlacementData> list = Placements;
-            int count = list.Count;
-            for (int i = 0; i < count; i++)
+            if (list.Count == 0)
             {
-                BlockPlacementData placement = list[i];
-                Vector3Int size = GetEffectiveSize(placement, catalog);
-                int endX = placement.gridPosition.x + size.x - 1;
-                int endY = placement.gridPosition.y + size.y - 1;
-                int endZ = placement.gridPosition.z + size.z - 1;
-                if (!any)
-                {
-                    minX = placement.gridPosition.x;
-                    minY = placement.gridPosition.y;
-                    minZ = placement.gridPosition.z;
-                    maxX = endX;
-                    maxY = endY;
-                    maxZ = endZ;
-                    any = true;
-                    continue;
-                }
-
-                if (placement.gridPosition.x < minX)
-                {
-                    minX = placement.gridPosition.x;
-                }
-
-                if (placement.gridPosition.y < minY)
-                {
-                    minY = placement.gridPosition.y;
-                }
-
-                if (placement.gridPosition.z < minZ)
-                {
-                    minZ = placement.gridPosition.z;
-                }
-
-                if (endX > maxX)
-                {
-                    maxX = endX;
-                }
-
-                if (endY > maxY)
-                {
-                    maxY = endY;
-                }
-
-                if (endZ > maxZ)
-                {
-                    maxZ = endZ;
-                }
+                minGrid = Vector3.zero;
+                maxGrid = GridDimensions - Vector3Int.one;
+                return;
             }
 
-            if (!any)
+            Vector3Int min = list[0].gridPosition;
+            Vector3Int max = min + GetEffectiveSize(list[0], catalog) - Vector3Int.one;
+            for (int i = 1; i < list.Count; i++)
             {
-                Vector3Int dimensions = GridDimensions;
-                maxX = dimensions.x - 1;
-                maxY = dimensions.y - 1;
-                maxZ = dimensions.z - 1;
+                Vector3Int start = list[i].gridPosition;
+                Vector3Int end = start + GetEffectiveSize(list[i], catalog) - Vector3Int.one;
+                min = Vector3Int.Min(min, start);
+                max = Vector3Int.Max(max, end);
             }
 
-            minGrid = new Vector3(minX, minY, minZ);
-            maxGrid = new Vector3(maxX, maxY, maxZ);
+            minGrid = min;
+            maxGrid = max;
         }
 
         public Vector3 GetHorizontalCenterShift(BlockCatalogSO catalog)
         {
-            Vector3 minGrid;
-            Vector3 maxGrid;
-            GetOccupiedGridBounds(catalog, out minGrid, out maxGrid);
-            float occupiedCenterX = (minGrid.x + maxGrid.x) * 0.5f;
-            float occupiedCenterZ = (minGrid.z + maxGrid.z) * 0.5f;
+            GetOccupiedGridBounds(catalog, out Vector3 minGrid, out Vector3 maxGrid);
+            float centerX = (minGrid.x + maxGrid.x) * 0.5f;
+            float centerZ = (minGrid.z + maxGrid.z) * 0.5f;
             Vector3 cell = GetScaledCellSize(catalog);
-            return new Vector3(-(occupiedCenterX + 0.5f) * cell.x, 0f, -(occupiedCenterZ + 0.5f) * cell.z);
+            return new Vector3(-(centerX + 0.5f) * cell.x, 0f, -(centerZ + 0.5f) * cell.z);
         }
 
         public Vector3 GetScaledCellSize(BlockCatalogSO catalog)
         {
-            float scale = catalog != null ? catalog.GetScale() : 1f;
-            return CellSize * scale;
+            return CellSize * (catalog != null ? catalog.GetScale() : 1f);
         }
 
         public float GetTableLift(BlockCatalogSO catalog)
         {
             if (catalog == null)
-            {
                 return 0f;
-            }
 
-            float cellHeight = GetScaledCellSize(catalog).y;
-            return (catalog.GetTableHeightFactor(CellSize.y) - 1f) * cellHeight;
+            return (catalog.GetTableHeightFactor(CellSize.y) - 1f) * GetScaledCellSize(catalog).y;
         }
 
         public Vector3 GetFootprintWorldCenter(Vector3Int anchor, Vector3Int effectiveSize, BlockCatalogSO catalog, bool isFoundationTable)
@@ -590,133 +297,136 @@ namespace SmashFast.Data
             Vector3Int size = Footprint.ClampSize(effectiveSize);
             Vector3 cell = GetScaledCellSize(catalog);
             float lift = GetTableLift(catalog);
-            float bottomY = isFoundationTable ? 0f : (anchor.y * cell.y) + (anchor.y > 0 ? lift : 0f);
-            float heightY = (size.y * cell.y) + (isFoundationTable ? lift : 0f);
+            float bottom = isFoundationTable ? 0f : anchor.y * cell.y + (anchor.y > 0 ? lift : 0f);
+            float height = size.y * cell.y + (isFoundationTable ? lift : 0f);
+
             return OriginOffset + new Vector3(
-                (anchor.x + ((size.x - 1) * 0.5f) + 0.5f) * cell.x,
-                bottomY + (heightY * 0.5f),
-                (anchor.z + ((size.z - 1) * 0.5f) + 0.5f) * cell.z);
+                (anchor.x + (size.x - 1) * 0.5f + 0.5f) * cell.x,
+                bottom + height * 0.5f,
+                (anchor.z + (size.z - 1) * 0.5f + 0.5f) * cell.z);
         }
 
         public Vector3 GetCellWorldScale(Vector3 baseScale)
         {
             if (baseScale == Vector3.zero)
-            {
                 baseScale = Vector3.one;
-            }
 
-            Vector3 cell = CellSize;
-            return new Vector3(baseScale.x * cell.x, baseScale.y * cell.y, baseScale.z * cell.z);
+            return Vector3.Scale(baseScale, CellSize);
         }
 
         public Vector3 GetFootprintWorldScale(Vector3 baseScale, Vector3Int sizeInCells)
         {
-            Vector3Int localSize = Footprint.ClampSize(sizeInCells);
-            Vector3 cellScale = GetCellWorldScale(baseScale);
-            return new Vector3(cellScale.x * localSize.x, cellScale.y * localSize.y, cellScale.z * localSize.z);
+            return Vector3.Scale(GetCellWorldScale(baseScale), Footprint.ClampSize(sizeInCells));
         }
 
         public Vector3 GetFootprintWorldScale(Vector3 baseScale, Vector3Int sizeInCells, BlockCatalogSO catalog)
         {
-            float scale = catalog != null ? catalog.GetScale() : 1f;
-            return GetFootprintWorldScale(baseScale, sizeInCells) * scale;
+            return GetFootprintWorldScale(baseScale, sizeInCells) * (catalog != null ? catalog.GetScale() : 1f);
         }
 
         public Matrix4x4 GetWorldMatrix(in BlockPlacementData placement, Vector3 baseScale, Vector3Int sizeInCells, BlockCatalogSO catalog)
         {
-            Vector3Int logicalSize = HasCustomSize(placement)
-                ? Footprint.ClampSize(placement.customSize)
-                : Footprint.ClampSize(sizeInCells);
-            Vector3Int effectiveSize = Footprint.GetEffectiveSize(logicalSize, placement.rotationEuler);
-            Vector3 worldPos;
-            Quaternion worldRot;
-            GetWorldPose(placement, effectiveSize, catalog, 0f, out worldPos, out worldRot);
-            Vector3 scale = GetFootprintWorldScale(baseScale, effectiveSize, catalog);
-            return Matrix4x4.TRS(worldPos, worldRot, scale);
+            Vector3Int size = Footprint.ClampSize(HasCustomSize(placement) ? placement.customSize : sizeInCells);
+            Vector3Int effectiveSize = Footprint.GetEffectiveSize(size, placement.rotationEuler);
+            GetWorldPose(placement, effectiveSize, catalog, 0f, out Vector3 position, out Quaternion rotation);
+            return Matrix4x4.TRS(position, rotation, GetFootprintWorldScale(baseScale, effectiveSize, catalog));
+        }
+
+        public void GetWorldPose(in BlockPlacementData placement, Vector3Int effectiveSize, BlockCatalogSO catalog, float extraYaw, out Vector3 position, out Quaternion rotation)
+        {
+            GetWorldPose(placement, effectiveSize, catalog, extraYaw, GetHorizontalCenterShift(catalog), out position, out rotation);
         }
 
         public void GetWorldPose(
             in BlockPlacementData placement,
             Vector3Int effectiveSize,
             BlockCatalogSO catalog,
-            float extraYawOffset,
-            out Vector3 worldPos,
-            out Quaternion worldRot)
+            float extraYaw,
+            Vector3 centerShift,
+            out Vector3 position,
+            out Quaternion rotation)
         {
             Vector3Int size = Footprint.ClampSize(effectiveSize);
-            Vector3 unrotatedCenter = GetFootprintWorldCenter(placement.gridPosition, size, catalog, IsFoundationTable(placement, catalog));
-            Vector3 centerShift = GetHorizontalCenterShift(catalog);
-            Vector3 tableCenterPos;
-            float tableYaw;
-            if (TryGetSupportingTable(placement, size, catalog, out tableCenterPos, out tableYaw))
+            Vector3 center = GetFootprintWorldCenter(placement.gridPosition, size, catalog, IsFoundationTable(placement, catalog));
+
+            if (TryGetSupportingTable(placement, size, catalog, out Vector3 tableCenter, out float tableYaw))
             {
-                Quaternion orbit = Quaternion.Euler(0f, tableYaw + extraYawOffset, 0f);
-                worldPos = tableCenterPos + (orbit * (unrotatedCenter - tableCenterPos));
-                worldPos += centerShift;
-                worldRot = orbit * Quaternion.Euler(placement.rotationEuler);
+                Quaternion orbit = Quaternion.Euler(0f, tableYaw + extraYaw, 0f);
+                position = tableCenter + orbit * (center - tableCenter) + centerShift;
+                rotation = orbit * Quaternion.Euler(placement.rotationEuler);
                 return;
             }
 
-            worldPos = unrotatedCenter + centerShift;
             Vector3 euler = placement.rotationEuler;
-            euler.y += extraYawOffset;
-            worldRot = Quaternion.Euler(euler);
+            euler.y += extraYaw;
+            position = center + centerShift;
+            rotation = Quaternion.Euler(euler);
         }
 
         public bool IsFoundationTable(in BlockPlacementData placement, BlockCatalogSO catalog)
         {
             if (catalog == null || placement.gridPosition.y != 0)
-            {
                 return false;
-            }
 
-            BlockDefinition definition;
-            if (!catalog.TryGetBlockDefinition(placement.blockId, out definition))
-            {
+            if (!catalog.TryGetBlockDefinition(placement.blockId, out BlockDefinition definition))
                 return false;
-            }
 
-            if (definition.shapeRole == BlockShapeRole.FoundationTable)
+            return definition.shapeRole == BlockShapeRole.FoundationTable
+                || definition.materialType == BlockMaterialType.TableFoundation;
+        }
+
+        public Bounds GetWorldBounds(BlockCatalogSO catalog)
+        {
+            Vector3 cell = GetScaledCellSize(catalog);
+            Vector3 centerShift = GetHorizontalCenterShift(catalog);
+            Vector3 size = Vector3.Scale(GridDimensions, cell) + Vector3.up * GetTableLift(catalog);
+            Bounds bounds = new Bounds(OriginOffset + size * 0.5f + centerShift, size);
+
+            foreach (BlockPlacementData placement in Placements)
             {
-                return true;
+                Vector3Int effectiveSize = GetEffectiveSize(placement, catalog);
+                GetWorldPose(placement, effectiveSize, catalog, 0f, centerShift, out Vector3 position, out _);
+                float reach = (GetFootprintWorldScale(Vector3.one, effectiveSize, catalog) * 0.5f).magnitude;
+                bounds.Encapsulate(position + Vector3.one * reach);
+                bounds.Encapsulate(position - Vector3.one * reach);
             }
 
-            return definition.materialType == BlockMaterialType.TableFoundation;
+            return bounds;
+        }
+
+        private bool HasCustomSize(in BlockPlacementData placement)
+        {
+            return placement.customSize.x > 0 && placement.customSize.y > 0 && placement.customSize.z > 0;
+        }
+
+        private PlacementValidationStatus ValidatePlacement(Vector3Int anchor, Vector3Int effectiveSize, BlockCatalogSO catalog, bool ignoreAnchor, Vector3Int ignoredAnchor)
+        {
+            Vector3Int size = Footprint.ClampSize(effectiveSize);
+            if (!IsFootprintInsideGrid(anchor, size))
+                return PlacementValidationStatus.InvalidOutOfBounds;
+
+            return OverlapsAny(anchor, size, catalog, ignoreAnchor, ignoredAnchor)
+                ? PlacementValidationStatus.ValidOverwrite
+                : PlacementValidationStatus.ValidEmpty;
         }
 
         private bool IsFootprintInsideGrid(Vector3Int anchor, Vector3Int effectiveSize)
         {
-            Vector3Int size = Footprint.ClampSize(effectiveSize);
             if (anchor.x < 0 || anchor.y < 0 || anchor.z < 0)
-            {
                 return false;
-            }
 
-            Vector3Int end = anchor + size - Vector3Int.one;
-            return IsInsideGrid(end);
+            return IsInsideGrid(anchor + Footprint.ClampSize(effectiveSize) - Vector3Int.one);
         }
 
-        private bool OverlapsAny(
-            Vector3Int anchor,
-            Vector3Int effectiveSize,
-            BlockCatalogSO catalog,
-            bool ignoreAnchor,
-            Vector3Int ignoredAnchor)
+        private bool OverlapsAny(Vector3Int anchor, Vector3Int effectiveSize, BlockCatalogSO catalog, bool ignoreAnchor, Vector3Int ignoredAnchor)
         {
-            List<BlockPlacementData> list = Placements;
-            int count = list.Count;
-            for (int i = 0; i < count; i++)
+            foreach (BlockPlacementData existing in Placements)
             {
-                if (ignoreAnchor && list[i].gridPosition == ignoredAnchor)
-                {
+                if (ignoreAnchor && existing.gridPosition == ignoredAnchor)
                     continue;
-                }
 
-                Vector3Int existingSize = GetEffectiveSize(list[i], catalog);
-                if (Footprint.Overlaps(anchor, effectiveSize, list[i].gridPosition, existingSize))
-                {
+                if (Footprint.Overlaps(anchor, effectiveSize, existing.gridPosition, GetEffectiveSize(existing, catalog)))
                     return true;
-                }
             }
 
             return false;
@@ -724,89 +434,35 @@ namespace SmashFast.Data
 
         private void RemoveOverlapping(Vector3Int anchor, Vector3Int effectiveSize, BlockCatalogSO catalog)
         {
-            List<BlockPlacementData> list = Placements;
-            for (int i = list.Count - 1; i >= 0; i--)
-            {
-                Vector3Int existingSize = GetEffectiveSize(list[i], catalog);
-                if (!Footprint.Overlaps(anchor, effectiveSize, list[i].gridPosition, existingSize))
-                {
-                    continue;
-                }
-
-                list.RemoveAt(i);
-            }
+            Placements.RemoveAll(existing => Footprint.Overlaps(anchor, effectiveSize, existing.gridPosition, GetEffectiveSize(existing, catalog)));
         }
 
         private bool IntersectsLayer(in BlockPlacementData placement, int layerZ, BlockCatalogSO catalog)
         {
-            Vector3Int size = GetEffectiveSize(placement, catalog);
             int minZ = placement.gridPosition.z;
-            int maxZ = minZ + size.z - 1;
+            int maxZ = minZ + GetEffectiveSize(placement, catalog).z - 1;
             return layerZ >= minZ && layerZ <= maxZ;
         }
 
-        public Bounds GetWorldBounds(BlockCatalogSO catalog)
+        private bool TryGetSupportingTable(in BlockPlacementData block, Vector3Int blockSize, BlockCatalogSO catalog, out Vector3 tableCenter, out float tableYaw)
         {
-            Vector3Int dimensions = GridDimensions;
-            Vector3 cell = GetScaledCellSize(catalog);
-            Vector3 size = new Vector3(dimensions.x * cell.x, (dimensions.y * cell.y) + GetTableLift(catalog), dimensions.z * cell.z);
-            Vector3 boundsCenter = OriginOffset + (size * 0.5f) + GetHorizontalCenterShift(catalog);
-            Bounds bounds = new Bounds(boundsCenter, size);
-            int count = PlacementCount;
-            for (int i = 0; i < count; i++)
-            {
-                BlockPlacementData placement;
-                if (!TryGetPlacementByIndex(i, out placement))
-                {
-                    continue;
-                }
-
-                Vector3Int footprint = GetEffectiveSize(placement, catalog);
-                Vector3 worldPos;
-                Quaternion worldRot;
-                GetWorldPose(placement, footprint, catalog, 0f, out worldPos, out worldRot);
-                Vector3 extent = GetFootprintWorldScale(Vector3.one, footprint, catalog) * 0.5f;
-                float reach = extent.magnitude;
-                bounds.Encapsulate(worldPos + new Vector3(reach, reach, reach));
-                bounds.Encapsulate(worldPos - new Vector3(reach, reach, reach));
-            }
-
-            return bounds;
-        }
-
-        private bool TryGetSupportingTable(
-            in BlockPlacementData block,
-            Vector3Int blockSize,
-            BlockCatalogSO catalog,
-            out Vector3 tableCenterPos,
-            out float tableYaw)
-        {
-            tableCenterPos = Vector3.zero;
+            tableCenter = Vector3.zero;
             tableYaw = 0f;
             if (catalog == null || block.gridPosition.y <= 0)
-            {
                 return false;
-            }
 
-            int centerX = block.gridPosition.x + ((blockSize.x - 1) / 2);
-            int centerZ = block.gridPosition.z + ((blockSize.z - 1) / 2);
-            List<BlockPlacementData> list = Placements;
-            int count = list.Count;
-            for (int i = 0; i < count; i++)
+            int centerX = block.gridPosition.x + (blockSize.x - 1) / 2;
+            int centerZ = block.gridPosition.z + (blockSize.z - 1) / 2;
+            foreach (BlockPlacementData candidate in Placements)
             {
-                BlockPlacementData candidate = list[i];
                 if (!IsFoundationTable(candidate, catalog))
-                {
                     continue;
-                }
 
                 Vector3Int tableSize = GetEffectiveSize(candidate, catalog);
                 if (!Footprint.ContainsXZ(candidate.gridPosition, tableSize, centerX, centerZ))
-                {
                     continue;
-                }
 
-                tableCenterPos = GetFootprintWorldCenter(candidate.gridPosition, tableSize, catalog, true);
+                tableCenter = GetFootprintWorldCenter(candidate.gridPosition, tableSize, catalog, true);
                 tableYaw = candidate.rotationEuler.y;
                 return true;
             }

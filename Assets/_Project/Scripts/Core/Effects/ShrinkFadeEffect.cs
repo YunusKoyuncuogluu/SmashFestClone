@@ -6,26 +6,27 @@ namespace SmashFast.Core.Effects
 {
     public class ShrinkFadeEffect
     {
-        private const float MinScaleFactor = 0.02f;
+        private const float MinScale = 0.02f;
 
         private readonly int baseColorId = Shader.PropertyToID("_BaseColor");
-        private readonly Transform[] scaleTargets;
+        private readonly Transform[] targets;
         private readonly Renderer[] renderers;
         private readonly Vector3[] baseScales;
         private readonly Material[][] sourceMaterials;
         private readonly Material[][] fadeMaterials;
         private readonly Color[][] baseColors;
         private readonly MaterialPropertyBlock propertyBlock = new MaterialPropertyBlock();
+
         private bool isPrepared;
         private bool useFadeMaterials;
         private bool isFading;
         private int playId;
 
-        public ShrinkFadeEffect(Transform[] scaleTargets, Renderer[] renderers)
+        public ShrinkFadeEffect(Transform[] targets, Renderer[] renderers)
         {
-            this.scaleTargets = scaleTargets;
+            this.targets = targets;
             this.renderers = renderers;
-            baseScales = new Vector3[scaleTargets.Length];
+            baseScales = new Vector3[targets.Length];
             sourceMaterials = new Material[renderers.Length][];
             fadeMaterials = new Material[renderers.Length][];
             baseColors = new Color[renderers.Length][];
@@ -34,9 +35,7 @@ namespace SmashFast.Core.Effects
         public void Prepare(FadeMaterialLibrary library)
         {
             if (isPrepared)
-            {
                 return;
-            }
 
             isPrepared = true;
             useFadeMaterials = library != null;
@@ -73,9 +72,7 @@ namespace SmashFast.Core.Effects
             {
                 bool canceled = await UniTask.Yield(PlayerLoopTiming.Update, token).SuppressCancellationThrow();
                 if (canceled || id != playId || !isFading)
-                {
                     return true;
-                }
 
                 elapsed += Time.deltaTime;
                 Apply(Mathf.Clamp01(elapsed / duration));
@@ -88,90 +85,67 @@ namespace SmashFast.Core.Effects
         public void Restore()
         {
             if (!isFading)
-            {
                 return;
-            }
 
             isFading = false;
             playId++;
-            for (int i = 0; i < scaleTargets.Length; i++)
+            for (int i = 0; i < targets.Length; i++)
             {
-                if (scaleTargets[i] != null)
-                {
-                    scaleTargets[i].localScale = baseScales[i];
-                }
+                if (targets[i] != null)
+                    targets[i].localScale = baseScales[i];
             }
 
             if (!isPrepared || !useFadeMaterials)
-            {
                 return;
-            }
 
             for (int i = 0; i < renderers.Length; i++)
             {
-                Renderer renderer = renderers[i];
-                if (renderer == null)
-                {
+                Renderer meshRenderer = renderers[i];
+                if (meshRenderer == null)
                     continue;
-                }
 
-                renderer.sharedMaterials = sourceMaterials[i];
+                meshRenderer.sharedMaterials = sourceMaterials[i];
                 for (int j = 0; j < sourceMaterials[i].Length; j++)
-                {
-                    renderer.SetPropertyBlock(null, j);
-                }
+                    meshRenderer.SetPropertyBlock(null, j);
             }
         }
 
         private void Begin()
         {
             if (!isPrepared)
-            {
                 Prepare(null);
-            }
 
             isFading = true;
             playId++;
-            for (int i = 0; i < scaleTargets.Length; i++)
-            {
-                baseScales[i] = scaleTargets[i].localScale;
-            }
+            for (int i = 0; i < targets.Length; i++)
+                baseScales[i] = targets[i].localScale;
 
             if (!useFadeMaterials)
-            {
                 return;
-            }
 
             for (int i = 0; i < renderers.Length; i++)
-            {
                 renderers[i].sharedMaterials = fadeMaterials[i];
-            }
         }
 
-        private void Apply(float normalizedTime)
+        private void Apply(float t)
         {
-            float eased = normalizedTime * normalizedTime * (3f - (2f * normalizedTime));
+            float eased = t * t * (3f - 2f * t);
             float remaining = 1f - eased;
-            for (int i = 0; i < scaleTargets.Length; i++)
-            {
-                scaleTargets[i].localScale = baseScales[i] * Mathf.Max(remaining, MinScaleFactor);
-            }
+            for (int i = 0; i < targets.Length; i++)
+                targets[i].localScale = baseScales[i] * Mathf.Max(remaining, MinScale);
 
             if (!useFadeMaterials)
-            {
                 return;
-            }
 
             for (int i = 0; i < renderers.Length; i++)
             {
-                Renderer renderer = renderers[i];
                 Color[] colors = baseColors[i];
                 for (int j = 0; j < colors.Length; j++)
                 {
                     Color color = colors[j];
                     color.a *= remaining;
                     propertyBlock.SetColor(baseColorId, color);
-                    renderer.SetPropertyBlock(propertyBlock, j);
+                    renderers[i].SetPropertyBlock(propertyBlock, j);
                 }
             }
         }

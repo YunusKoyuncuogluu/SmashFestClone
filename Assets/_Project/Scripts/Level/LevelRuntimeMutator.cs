@@ -1,203 +1,88 @@
 using SmashFast.Data;
+using UnityEngine;
 
 namespace SmashFast.Level
 {
     public class LevelRuntimeMutator
     {
-        public float PickExtraYaw(System.Random random)
+        private readonly float[] extraYaws = { 25f, -25f, 35f, -35f, 45f, -45f };
+
+        public float PickExtraYaw(System.Random random) => extraYaws[random.Next(0, extraYaws.Length)];
+
+        public int ResolveMaxAmmo(LevelData level, int levelNumber, int cycle)
         {
-            int pick = random.Next(0, 6);
-            if (pick == 0)
-            {
-                return 25f;
-            }
-
-            if (pick == 1)
-            {
-                return -25f;
-            }
-
-            if (pick == 2)
-            {
-                return 35f;
-            }
-
-            if (pick == 3)
-            {
-                return -35f;
-            }
-
-            if (pick == 4)
-            {
-                return 45f;
-            }
-
-            return -45f;
-        }
-
-        public int ResolveMaxAmmo(LevelData levelData, int displayLevelNumber, int cycleIndex)
-        {
-            int authored = levelData.MaxAmmo;
-            if (cycleIndex < 1)
-            {
+            int authored = level.MaxAmmo;
+            if (cycle < 1)
                 return authored;
-            }
 
-            int par = levelData.ParAmmo;
+            int par = level.ParAmmo;
             if (par <= 0)
-            {
                 par = authored > 4 ? authored / 2 : 1;
-            }
 
-            int floor = par + 1;
-            if (floor < 1)
-            {
-                floor = 1;
-            }
+            int ammo = authored - cycle;
+            if (IsBossLevel(levelNumber))
+                ammo--;
+            else if (IsReliefLevel(levelNumber))
+                ammo++;
 
-            if (floor > authored)
-            {
-                floor = authored;
-            }
-
-            int ammo = authored - cycleIndex;
-            if (IsBossLevel(displayLevelNumber))
-            {
-                ammo -= 1;
-            }
-            else if (IsReliefLevel(displayLevelNumber))
-            {
-                ammo += 1;
-            }
-
-            if (ammo < floor)
-            {
-                ammo = floor;
-            }
-
-            if (ammo > authored)
-            {
-                ammo = authored;
-            }
-
-            return ammo;
+            int minAmmo = Mathf.Min(Mathf.Max(1, par + 1), authored);
+            return Mathf.Clamp(ammo, minAmmo, authored);
         }
 
-        public BlockDefinition ResolveBlock(
-            BlockDefinition source,
-            BlockCatalogSO catalog,
-            System.Random random,
-            int displayLevelNumber,
-            int cycleIndex,
-            int gridY)
+        public BlockDefinition ResolveBlock(BlockDefinition source, BlockCatalogSO catalog, System.Random random, int levelNumber, int cycle, int gridY)
         {
-            if (cycleIndex < 1 || catalog == null || random == null)
-            {
+            if (cycle < 1 || catalog == null || random == null)
                 return source;
-            }
 
-            if (source.materialType != BlockMaterialType.Wood)
-            {
+            bool isPlainWoodBlock = source.materialType == BlockMaterialType.Wood
+                && !source.isKinematicBase
+                && source.shapeRole == BlockShapeRole.StandardBlock;
+            if (!isPlainWoodBlock)
                 return source;
-            }
 
-            if (source.isKinematicBase || source.shapeRole != BlockShapeRole.StandardBlock)
-            {
-                return source;
-            }
-
-            float glassChance;
-            float stoneChance;
-            ResolveMaterialChances(displayLevelNumber, cycleIndex, gridY, out glassChance, out stoneChance);
+            GetMaterialChances(levelNumber, cycle, gridY, out float glassChance, out float stoneChance);
             float roll = (float)random.NextDouble();
-            if (roll < glassChance)
-            {
-                BlockDefinition glassBlock;
-                if (catalog.TryGetFirstByMaterialAndSize(BlockMaterialType.Glass, source.sizeInCells, out glassBlock))
-                {
-                    return glassBlock;
-                }
-            }
 
-            if (roll < glassChance + stoneChance)
-            {
-                BlockDefinition stoneBlock;
-                if (catalog.TryGetFirstByMaterialAndSize(BlockMaterialType.Stone, source.sizeInCells, out stoneBlock))
-                {
-                    return stoneBlock;
-                }
-            }
+            if (roll < glassChance && catalog.TryGetFirstByMaterialAndSize(BlockMaterialType.Glass, source.sizeInCells, out BlockDefinition glass))
+                return glass;
+
+            if (roll < glassChance + stoneChance && catalog.TryGetFirstByMaterialAndSize(BlockMaterialType.Stone, source.sizeInCells, out BlockDefinition stone))
+                return stone;
 
             return source;
         }
 
-        public bool IsBossLevel(int displayLevelNumber)
+        public bool IsBossLevel(int levelNumber) => levelNumber > 0 && levelNumber % 10 == 0;
+
+        public bool IsReliefLevel(int levelNumber) => levelNumber > 0 && !IsBossLevel(levelNumber) && levelNumber % 5 == 0;
+
+        private void GetMaterialChances(int levelNumber, int cycle, int gridY, out float glassChance, out float stoneChance)
         {
-            if (displayLevelNumber <= 0)
+            float cycleFactor = Mathf.Max(1, cycle);
+            glassChance = 0.08f + cycleFactor * 0.03f;
+            stoneChance = 0.14f + cycleFactor * 0.07f;
+
+            if (IsBossLevel(levelNumber))
             {
-                return false;
-            }
-
-            return displayLevelNumber % 10 == 0;
-        }
-
-        public bool IsReliefLevel(int displayLevelNumber)
-        {
-            if (displayLevelNumber <= 0 || IsBossLevel(displayLevelNumber))
-            {
-                return false;
-            }
-
-            return displayLevelNumber % 5 == 0;
-        }
-
-        private void ResolveMaterialChances(
-            int displayLevelNumber,
-            int cycleIndex,
-            int gridY,
-            out float glassChance,
-            out float stoneChance)
-        {
-            float cycle = cycleIndex < 1 ? 1f : cycleIndex;
-            glassChance = 0.08f + (cycle * 0.03f);
-            stoneChance = 0.14f + (cycle * 0.07f);
-            if (IsBossLevel(displayLevelNumber))
-            {
-                stoneChance = 0.5f + (cycle * 0.05f);
+                stoneChance = 0.5f + cycleFactor * 0.05f;
                 glassChance = 0.06f;
             }
-            else if (IsReliefLevel(displayLevelNumber))
+            else if (IsReliefLevel(levelNumber))
             {
-                glassChance = 0.42f + (cycle * 0.04f);
+                glassChance = 0.42f + cycleFactor * 0.04f;
                 stoneChance = 0.08f;
                 if (gridY <= 3)
-                {
                     glassChance += 0.15f;
-                }
             }
             else if (gridY <= 2)
             {
                 glassChance += 0.05f;
             }
 
-            if (glassChance > 0.75f)
-            {
-                glassChance = 0.75f;
-            }
-
-            if (stoneChance > 0.8f)
-            {
-                stoneChance = 0.8f;
-            }
-
+            glassChance = Mathf.Min(glassChance, 0.75f);
+            stoneChance = Mathf.Min(stoneChance, 0.8f);
             if (glassChance + stoneChance > 0.9f)
-            {
-                stoneChance = 0.9f - glassChance;
-                if (stoneChance < 0f)
-                {
-                    stoneChance = 0f;
-                }
-            }
+                stoneChance = Mathf.Max(0f, 0.9f - glassChance);
         }
     }
 }

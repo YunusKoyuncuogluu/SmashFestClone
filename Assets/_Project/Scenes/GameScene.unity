@@ -686,13 +686,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dbfb95a976c995f439f711ee87ef68d3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: SmashFast.Runtime::SmashFast.Gameplay.Cannon.CannonController
-  cannonBarrelTransform: {fileID: 1979246618}
+  barrel: {fileID: 1979246618}
   projectilePrefab: {fileID: 8952245643624144334, guid: 7eb1c41ec4988f040b7f5b755d25b365, type: 3}
   projectileSpeed: 14
   projectileMass: 1
   prewarmCount: 12
   startingAmmo: 10
-  muzzleForwardOffset: 0.6
+  muzzleOffset: 0.6
   recoilDistance: 0.18
   recoilReturnSpeed: 2.5
   aimDistance: 80

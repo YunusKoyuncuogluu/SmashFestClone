@@ -12,330 +12,213 @@ namespace SmashFast.Level
     {
         public const string GroundBindingId = "LevelGround";
 
-        private readonly IUniversalObjectPool objectPool;
-        private readonly BlockCatalogSO blockCatalog;
+        private readonly IUniversalObjectPool pool;
         private readonly FadeMaterialLibrary fadeLibrary;
-        private readonly Dictionary<int, bool> prefabIsCompound;
-        private Transform levelRoot;
-        private readonly Collider groundCollider;
-        private readonly LevelGroundAnchor groundAnchorResolver = new LevelGroundAnchor();
-        private LevelData lastLevelData;
-        private int lastLevelNumber;
-        private int activeDestructibleCount;
-        private int resolvedMaxAmmo;
-        private float spawnYawOffset;
-        private bool suppressDestructibleNotifications;
+        private readonly Collider ground;
+        private readonly BlockCatalogSO catalog;
         private readonly LevelDatabaseSO levelDatabase;
-        private readonly LevelRuntimeMutator runtimeMutator = new LevelRuntimeMutator();
-        private readonly LevelArchitect levelArchitect = new LevelArchitect();
-        private readonly BlockFootprint blockFootprint = new BlockFootprint();
-        private LevelData runtimeLevel;
 
-        public int ActiveDestructibleCount
-        {
-            get
-            {
-                return activeDestructibleCount;
-            }
-        }
+        private readonly LevelGroundAnchor groundAnchor = new LevelGroundAnchor();
+        private readonly LevelRuntimeMutator mutator = new LevelRuntimeMutator();
+        private readonly LevelArchitect architect = new LevelArchitect();
+        private readonly BlockFootprint footprint = new BlockFootprint();
+        private readonly Dictionary<int, bool> compoundPrefabs = new Dictionary<int, bool>(16);
+        private readonly List<SpawnedBlock> blocks = new List<SpawnedBlock>(64);
 
-        public int ResolvedMaxAmmo
-        {
-            get
-            {
-                return resolvedMaxAmmo;
-            }
-        }
+        private Transform levelRoot;
+        private LevelData lastLevel;
+        private int lastLevelNumber;
+        private float yawOffset;
+        private bool isClearing;
+
+        public int ActiveDestructibleCount { get; private set; }
+        public int ResolvedMaxAmmo { get; private set; }
 
         public LevelSpawner(
-            IUniversalObjectPool objectPool,
+            IUniversalObjectPool pool,
             FadeMaterialLibrary fadeLibrary,
-            [Inject(Id = GroundBindingId)] Collider groundCollider,
-            [InjectOptional] BlockCatalogSO blockCatalog,
+            [Inject(Id = GroundBindingId)] Collider ground,
+            [InjectOptional] BlockCatalogSO catalog,
             [InjectOptional] LevelDatabaseSO levelDatabase)
         {
-            this.objectPool = objectPool;
+            this.pool = pool;
             this.fadeLibrary = fadeLibrary;
-            this.groundCollider = groundCollider;
-            this.blockCatalog = blockCatalog;
+            this.ground = ground;
+            this.catalog = catalog;
             this.levelDatabase = levelDatabase;
-            prefabIsCompound = new Dictionary<int, bool>(16);
         }
 
         public void Initialize()
         {
-            if (blockCatalog != null)
-            {
-                blockCatalog.ScaleChanged += OnScaleChanged;
-            }
+            if (catalog != null)
+                catalog.ScaleChanged += OnScaleChanged;
         }
 
         public void Dispose()
         {
-            if (blockCatalog != null)
-            {
-                blockCatalog.ScaleChanged -= OnScaleChanged;
-            }
+            if (catalog != null)
+                catalog.ScaleChanged -= OnScaleChanged;
         }
 
         private void OnScaleChanged()
         {
-            if (lastLevelData == null)
-            {
-                return;
-            }
-
-            SpawnLevel(lastLevelData, lastLevelNumber);
+            if (lastLevel != null)
+                SpawnLevel(lastLevel, lastLevelNumber);
         }
 
-        public void SpawnLevel(LevelData levelData, int displayLevelNumber)
+        public void SpawnLevel(LevelData level, int levelNumber)
         {
-            lastLevelData = levelData;
-            lastLevelNumber = displayLevelNumber;
-            resolvedMaxAmmo = 0;
-            spawnYawOffset = 0f;
-            if (levelData == null || objectPool == null)
-            {
+            lastLevel = level;
+            lastLevelNumber = levelNumber;
+            ResolvedMaxAmmo = 0;
+            yawOffset = 0f;
+            if (level == null)
                 return;
-            }
 
-            int cycleIndex = 0;
-            if (levelDatabase != null)
-            {
-                cycleIndex = levelDatabase.GetCycleIndex(displayLevelNumber);
-            }
-
+            int cycle = levelDatabase != null ? levelDatabase.GetCycleIndex(levelNumber) : 0;
             System.Random random = null;
-            LevelData spawnSource = levelData;
-            bool generated = TryUseRuntimeLevel(displayLevelNumber, cycleIndex, levelData, out spawnSource);
-            if (generated)
+
+            LevelData generated = cycle >= 1 ? GenerateLevel(levelNumber, level) : null;
+            if (generated != null)
             {
-                resolvedMaxAmmo = spawnSource.MaxAmmo;
-                spawnYawOffset = 0f;
-                cycleIndex = 0;
+                level = generated;
+                ResolvedMaxAmmo = generated.MaxAmmo;
+                cycle = 0;
             }
             else
             {
-                resolvedMaxAmmo = runtimeMutator.ResolveMaxAmmo(levelData, displayLevelNumber, cycleIndex);
-                if (cycleIndex >= 1)
+                ResolvedMaxAmmo = mutator.ResolveMaxAmmo(level, levelNumber, cycle);
+                if (cycle >= 1)
                 {
-                    random = new System.Random(displayLevelNumber);
-                    spawnYawOffset = runtimeMutator.PickExtraYaw(random);
+                    random = new System.Random(levelNumber);
+                    yawOffset = mutator.PickExtraYaw(random);
                 }
             }
 
-            levelData = spawnSource;
-
-            if (blockCatalog == null)
-            {
+            if (catalog == null)
                 return;
-            }
 
-            suppressDestructibleNotifications = true;
-            try
-            {
-                objectPool.DespawnAllActive();
-            }
-            finally
-            {
-                suppressDestructibleNotifications = false;
-            }
-
-            activeDestructibleCount = 0;
+            ClearLevel();
             EnsureLevelRoot();
 
-            Vector3 groundAnchor = groundAnchorResolver.Resolve(groundCollider);
-
-            int count = levelData.PlacementCount;
-            for (int i = 0; i < count; i++)
+            Vector3 anchor = groundAnchor.Resolve(ground);
+            Vector3 centerShift = level.GetHorizontalCenterShift(catalog);
+            for (int i = 0; i < level.PlacementCount; i++)
             {
-                BlockPlacementData placement;
-                if (!levelData.TryGetPlacementByIndex(i, out placement))
-                {
-                    continue;
-                }
-
-                SpawnPlacement(levelData, placement, groundAnchor, random, displayLevelNumber, cycleIndex);
+                if (level.TryGetPlacementByIndex(i, out BlockPlacementData placement))
+                    SpawnBlock(level, placement, anchor, centerShift, random, levelNumber, cycle);
             }
 
-            HoldSpawnedBodies();
-        }
-
-        private void HoldSpawnedBodies()
-        {
-            if (levelRoot == null)
-            {
-                return;
-            }
-
-            int count = levelRoot.childCount;
-            for (int i = 0; i < count; i++)
-            {
-                Transform child = levelRoot.GetChild(i);
-                SpawnedBlock block = child.GetComponent<SpawnedBlock>();
-                if (block == null)
-                {
-                    continue;
-                }
-
+            foreach (SpawnedBlock block in blocks)
                 block.Hold();
-            }
-        }
-
-        private bool TryUseRuntimeLevel(int displayLevelNumber, int cycleIndex, LevelData authored, out LevelData spawnSource)
-        {
-            spawnSource = authored;
-            ReleaseRuntimeLevel();
-            if (cycleIndex < 1 || blockCatalog == null)
-            {
-                return false;
-            }
-
-            runtimeLevel = levelArchitect.GenerateRuntimeLevel(displayLevelNumber, blockCatalog, authored);
-            if (runtimeLevel == null || runtimeLevel.PlacementCount == 0)
-            {
-                ReleaseRuntimeLevel();
-                return false;
-            }
-
-            spawnSource = runtimeLevel;
-            return true;
-        }
-
-        private void ReleaseRuntimeLevel()
-        {
-            runtimeLevel = null;
-        }
-
-        private void SpawnPlacement(
-            LevelData levelData,
-            BlockPlacementData placement,
-            Vector3 groundAnchor,
-            System.Random random,
-            int displayLevelNumber,
-            int cycleIndex)
-        {
-            if (blockCatalog == null)
-            {
-                return;
-            }
-
-            BlockDefinition definition;
-            if (!blockCatalog.TryGetBlockDefinition(placement.blockId, out definition))
-            {
-                return;
-            }
-
-            definition = runtimeMutator.ResolveBlock(
-                definition,
-                blockCatalog,
-                random,
-                displayLevelNumber,
-                cycleIndex,
-                placement.gridPosition.y);
-
-            if (definition.prefab == null)
-            {
-                return;
-            }
-
-            Vector3Int sizeInCells = levelData.GetSizeInCells(placement, blockCatalog);
-            Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(sizeInCells, placement.rotationEuler);
-            Vector3 center;
-            Quaternion rotation;
-            levelData.GetWorldPose(placement, effectiveSize, blockCatalog, spawnYawOffset, out center, out rotation);
-            center += groundAnchor;
-            Vector3 targetScale = ResolveTargetScale(definition, levelData, sizeInCells);
-            Quaternion spawnRotation = rotation * Quaternion.Euler(definition.meshEuler);
-            GameObject instance = objectPool.Spawn(definition.prefab, center, spawnRotation, levelRoot);
-            if (instance == null)
-            {
-                return;
-            }
-
-            SpawnedBlock block = instance.GetComponent<SpawnedBlock>();
-            if (block == null)
-            {
-                objectPool.Despawn(instance);
-                return;
-            }
-
-            block.Initialize(definition, targetScale, blockCatalog.GetScale(), blockCatalog.GetTableHeightFactor(levelData.CellSize.y), sizeInCells, blockCatalog.GetMassMultiplier(), this, objectPool, fadeLibrary);
-            if (definition.IsTarget())
-            {
-                activeDestructibleCount++;
-            }
         }
 
         public void UnregisterTarget()
         {
-            if (suppressDestructibleNotifications)
-            {
-                return;
-            }
-
-            if (activeDestructibleCount <= 0)
-            {
-                return;
-            }
-
-            activeDestructibleCount--;
+            if (!isClearing && ActiveDestructibleCount > 0)
+                ActiveDestructibleCount--;
         }
 
-        private Vector3 ResolveTargetScale(BlockDefinition definition, LevelData levelData, Vector3Int sizeInCells)
+        private void ClearLevel()
         {
-            bool foundationTable = definition.shapeRole == BlockShapeRole.FoundationTable
+            isClearing = true;
+            try
+            {
+                pool.DespawnAllActive();
+            }
+            finally
+            {
+                isClearing = false;
+            }
+
+            blocks.Clear();
+            ActiveDestructibleCount = 0;
+        }
+
+        private LevelData GenerateLevel(int levelNumber, LevelData template)
+        {
+            if (catalog == null)
+                return null;
+
+            LevelData generated = architect.GenerateRuntimeLevel(levelNumber, catalog, template);
+            return generated != null && generated.PlacementCount > 0 ? generated : null;
+        }
+
+        private void SpawnBlock(LevelData level, BlockPlacementData placement, Vector3 anchor, Vector3 centerShift, System.Random random, int levelNumber, int cycle)
+        {
+            if (!catalog.TryGetBlockDefinition(placement.blockId, out BlockDefinition definition))
+                return;
+
+            definition = mutator.ResolveBlock(definition, catalog, random, levelNumber, cycle, placement.gridPosition.y);
+            if (definition.prefab == null)
+                return;
+
+            Vector3Int size = level.GetSizeInCells(placement, catalog);
+            Vector3Int effectiveSize = footprint.GetEffectiveSize(size, placement.rotationEuler);
+            level.GetWorldPose(placement, effectiveSize, catalog, yawOffset, centerShift, out Vector3 center, out Quaternion rotation);
+
+            Quaternion spawnRotation = rotation * Quaternion.Euler(definition.meshEuler);
+            GameObject instance = pool.Spawn(definition.prefab, center + anchor, spawnRotation, levelRoot);
+            if (instance == null)
+                return;
+
+            if (!instance.TryGetComponent(out SpawnedBlock block))
+            {
+                pool.Despawn(instance);
+                return;
+            }
+
+            block.Initialize(
+                definition,
+                GetLayoutScale(definition, level, size),
+                catalog.GetScale(),
+                catalog.GetTableHeightFactor(level.CellSize.y),
+                size,
+                catalog.GetMassMultiplier(),
+                this,
+                pool,
+                fadeLibrary);
+
+            blocks.Add(block);
+            if (definition.IsTarget())
+                ActiveDestructibleCount++;
+        }
+
+        private Vector3 GetLayoutScale(BlockDefinition definition, LevelData level, Vector3Int size)
+        {
+            bool isTable = definition.shapeRole == BlockShapeRole.FoundationTable
                 || definition.materialType == BlockMaterialType.TableFoundation;
-            if (foundationTable)
-            {
+            if (isTable)
                 return Vector3.one;
-            }
 
-            if (IsCompoundPrefab(definition.prefab))
-            {
-                return levelData.GetCellWorldScale(definition.baseScale);
-            }
+            if (IsCompound(definition.prefab))
+                return level.GetCellWorldScale(definition.baseScale);
 
-            return levelData.GetFootprintWorldScale(definition.baseScale, sizeInCells);
+            return level.GetFootprintWorldScale(definition.baseScale, size);
         }
 
-        private bool IsCompoundPrefab(GameObject prefab)
+        private bool IsCompound(GameObject prefab)
         {
-            int prefabId = prefab.GetInstanceID();
-            bool isCompound;
-            if (prefabIsCompound.TryGetValue(prefabId, out isCompound))
-            {
+            int id = prefab.GetInstanceID();
+            if (compoundPrefabs.TryGetValue(id, out bool isCompound))
                 return isCompound;
-            }
 
-            MeshFilter[] filters = prefab.GetComponentsInChildren<MeshFilter>(true);
             int meshCount = 0;
-            int filterCount = filters.Length;
-            for (int i = 0; i < filterCount; i++)
+            foreach (MeshFilter filter in prefab.GetComponentsInChildren<MeshFilter>(true))
             {
-                MeshFilter filter = filters[i];
-                if (filter == null || filter.sharedMesh == null)
-                {
-                    continue;
-                }
-
-                meshCount++;
+                if (filter.sharedMesh != null)
+                    meshCount++;
             }
 
             isCompound = meshCount > 1;
-            prefabIsCompound.Add(prefabId, isCompound);
+            compoundPrefabs.Add(id, isCompound);
             return isCompound;
         }
 
         private void EnsureLevelRoot()
         {
-            if (levelRoot != null)
-            {
-                return;
-            }
-
-            GameObject rootObject = new GameObject("SpawnedLevel");
-            levelRoot = rootObject.transform;
+            if (levelRoot == null)
+                levelRoot = new GameObject("SpawnedLevel").transform;
         }
     }
 }

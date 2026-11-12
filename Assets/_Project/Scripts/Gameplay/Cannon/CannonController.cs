@@ -1,5 +1,6 @@
 using SmashFast.Core.Effects;
 using SmashFast.Core.Pooling;
+using SmashFast.Level;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -9,204 +10,131 @@ namespace SmashFast.Gameplay.Cannon
 {
     public class CannonController : MonoBehaviour, IProjectileLifecycle
     {
-        [SerializeField] private Transform cannonBarrelTransform;
+        [SerializeField] private Transform barrel;
         [SerializeField] private GameObject projectilePrefab;
         [SerializeField, Min(0.1f)] private float projectileSpeed = 14f;
         [SerializeField, Min(0.01f)] private float projectileMass = 1f;
         [SerializeField, Min(0)] private int prewarmCount = 12;
         [SerializeField, Min(0)] private int startingAmmo = 10;
-        [SerializeField, Min(0f)] private float muzzleForwardOffset = 0.6f;
+        [SerializeField, Min(0f)] private float muzzleOffset = 0.6f;
         [SerializeField, Min(0f)] private float recoilDistance = 0.18f;
         [SerializeField, Min(0.01f)] private float recoilReturnSpeed = 2.5f;
         [SerializeField, Min(1f)] private float aimDistance = 80f;
         [SerializeField, Min(1f)] private float emptyAimDistance = 18f;
         [SerializeField] private LayerMask aimMask = Physics.DefaultRaycastLayers;
 
-        private readonly RaycastHit[] raycastHits = new RaycastHit[16];
+        private readonly RaycastHit[] hits = new RaycastHit[16];
 
-        private IUniversalObjectPool objectPool;
+        private IUniversalObjectPool pool;
         private FadeMaterialLibrary fadeLibrary;
         private Camera aimCamera;
-        private Vector3 baseLocalPosition;
-        private float recoilOffset;
-        private int remainingAmmo;
-        private int loadedAmmo;
-        private int activeProjectileCount;
-        private bool inputEnabled;
-        private bool barrelReady;
+        private Vector3 barrelRestPosition;
+        private Vector3 levelCenter;
+        private bool hasLevelCenter;
+        private float recoil;
+        private bool inputEnabled = true;
 
-        public int RemainingAmmo
-        {
-            get
-            {
-                return remainingAmmo;
-            }
-        }
-
-        public int MaxAmmo
-        {
-            get
-            {
-                return loadedAmmo;
-            }
-        }
-
-        public int ActiveProjectileCount
-        {
-            get
-            {
-                return activeProjectileCount;
-            }
-        }
+        public int RemainingAmmo { get; private set; }
+        public int MaxAmmo { get; private set; }
+        public int ActiveProjectileCount { get; private set; }
 
         [Inject]
-        public void Construct(IUniversalObjectPool objectPool, FadeMaterialLibrary fadeLibrary, [InjectOptional] Camera gameplayCamera)
+        public void Construct(
+            IUniversalObjectPool pool,
+            FadeMaterialLibrary fadeLibrary,
+            [InjectOptional] Camera gameplayCamera,
+            [InjectOptional(Id = LevelSpawner.GroundBindingId)] Collider ground)
         {
-            this.objectPool = objectPool;
+            this.pool = pool;
             this.fadeLibrary = fadeLibrary;
             if (gameplayCamera != null)
-            {
                 aimCamera = gameplayCamera;
+
+            if (ground != null)
+            {
+                levelCenter = new LevelGroundAnchor().Resolve(ground);
+                hasLevelCenter = true;
             }
         }
 
         private void Awake()
         {
-            if (cannonBarrelTransform == null)
-            {
-                cannonBarrelTransform = transform;
-            }
+            if (barrel == null)
+                barrel = transform;
 
-            baseLocalPosition = cannonBarrelTransform.localPosition;
-            barrelReady = true;
-            inputEnabled = true;
-            loadedAmmo = startingAmmo;
-            remainingAmmo = startingAmmo;
             if (aimMask.value == 0)
-            {
                 aimMask = Physics.DefaultRaycastLayers;
-            }
+
+            barrelRestPosition = barrel.localPosition;
+            LoadAmmo(startingAmmo);
         }
 
         private void Start()
         {
             if (aimCamera == null)
-            {
                 aimCamera = Camera.main;
-            }
 
-            if (objectPool == null || projectilePrefab == null)
-            {
-                return;
-            }
-
-            objectPool.RegisterPrefab(projectilePrefab, prewarmCount);
+            if (projectilePrefab != null)
+                pool.RegisterPrefab(projectilePrefab, prewarmCount);
         }
 
         private void Update()
         {
-            UpdateRecoil(Time.deltaTime);
+            UpdateRecoil();
             TryFire();
         }
 
         public void LoadAmmo(int ammo)
         {
-            int safeAmmo = ammo < 0 ? 0 : ammo;
-            loadedAmmo = safeAmmo;
-            remainingAmmo = safeAmmo;
+            MaxAmmo = Mathf.Max(0, ammo);
+            RemainingAmmo = MaxAmmo;
         }
 
-        public void SetInputEnabled(bool enabled)
-        {
-            inputEnabled = enabled;
-        }
+        public void SetInputEnabled(bool enabled) => inputEnabled = enabled;
 
         public void OnProjectileReleased()
         {
-            if (activeProjectileCount <= 0)
-            {
-                return;
-            }
-
-            activeProjectileCount--;
+            if (ActiveProjectileCount > 0)
+                ActiveProjectileCount--;
         }
 
-        private void UpdateRecoil(float deltaTime)
+        private void UpdateRecoil()
         {
-            if (!barrelReady || recoilOffset <= 0f)
-            {
+            if (recoil <= 0f)
                 return;
-            }
 
-            recoilOffset -= recoilReturnSpeed * deltaTime;
-            if (recoilOffset < 0f)
-            {
-                recoilOffset = 0f;
-            }
-
-            cannonBarrelTransform.localPosition = baseLocalPosition - (Vector3.forward * recoilOffset);
+            recoil = Mathf.Max(0f, recoil - recoilReturnSpeed * Time.deltaTime);
+            barrel.localPosition = barrelRestPosition - Vector3.forward * recoil;
         }
 
         private void TryFire()
         {
-            if (!inputEnabled || remainingAmmo <= 0 || objectPool == null || projectilePrefab == null || aimCamera == null || !barrelReady)
-            {
+            if (!inputEnabled || RemainingAmmo <= 0 || projectilePrefab == null || aimCamera == null)
                 return;
-            }
 
-            Vector2 screenPosition;
-            int pointerId;
-            if (!TryReadPress(out screenPosition, out pointerId))
-            {
+            if (!TryReadPress(out Vector2 screenPosition, out int pointerId) || IsPointerOverUi(pointerId))
                 return;
-            }
-
-            if (IsBlockedByUi(pointerId))
-            {
-                return;
-            }
 
             Ray ray = aimCamera.ScreenPointToRay(screenPosition);
-            Vector3 aimPoint;
-            if (!TryGetAimPoint(ray, out aimPoint))
-            {
-                return;
-            }
+            Vector3 direction = GetAimPoint(ray) - barrel.position;
+            direction = direction.sqrMagnitude < 0.0001f ? barrel.forward : direction.normalized;
 
-            Vector3 direction = aimPoint - cannonBarrelTransform.position;
-            if (direction.sqrMagnitude < 0.0001f)
-            {
-                direction = cannonBarrelTransform.forward;
-            }
-            else
-            {
-                direction.Normalize();
-            }
+            barrel.rotation = Quaternion.LookRotation(direction, Vector3.up);
+            recoil = recoilDistance;
 
-            cannonBarrelTransform.rotation = Quaternion.LookRotation(direction, Vector3.up);
-            recoilOffset = recoilDistance;
-            Vector3 spawnPosition = cannonBarrelTransform.position + (cannonBarrelTransform.forward * muzzleForwardOffset);
-            CannonProjectile projectile = objectPool.Spawn<CannonProjectile>(projectilePrefab, spawnPosition, cannonBarrelTransform.rotation, null);
+            Vector3 spawnPosition = barrel.position + barrel.forward * muzzleOffset;
+            CannonProjectile projectile = pool.Spawn<CannonProjectile>(projectilePrefab, spawnPosition, barrel.rotation);
             if (projectile == null)
-            {
                 return;
-            }
 
-            projectile.AssignDependencies(objectPool, fadeLibrary);
-            if (!projectile.Launch(cannonBarrelTransform.forward, projectileSpeed, projectileMass, this))
-            {
-                objectPool.Despawn(projectile.gameObject);
-                return;
-            }
-
-            activeProjectileCount++;
-            remainingAmmo--;
+            projectile.AssignDependencies(pool, fadeLibrary);
+            projectile.Launch(barrel.forward, projectileSpeed, projectileMass, this);
+            ActiveProjectileCount++;
+            RemainingAmmo--;
         }
 
         private bool TryReadPress(out Vector2 screenPosition, out int pointerId)
         {
-            screenPosition = Vector2.zero;
-            pointerId = -1;
             Mouse mouse = Mouse.current;
             if (mouse != null && mouse.leftButton.wasPressedThisFrame)
             {
@@ -216,93 +144,57 @@ namespace SmashFast.Gameplay.Cannon
             }
 
             Touchscreen touchscreen = Touchscreen.current;
-            if (touchscreen == null)
+            if (touchscreen != null && touchscreen.primaryTouch.press.wasPressedThisFrame)
             {
-                return false;
+                screenPosition = touchscreen.primaryTouch.position.ReadValue();
+                pointerId = touchscreen.primaryTouch.touchId.ReadValue();
+                return true;
             }
 
-            UnityEngine.InputSystem.Controls.TouchControl touch = touchscreen.primaryTouch;
-            if (!touch.press.wasPressedThisFrame)
-            {
-                return false;
-            }
-
-            screenPosition = touch.position.ReadValue();
-            pointerId = touch.touchId.ReadValue();
-            return true;
+            screenPosition = Vector2.zero;
+            pointerId = -1;
+            return false;
         }
 
-        private bool IsBlockedByUi(int pointerId)
+        private bool IsPointerOverUi(int pointerId)
         {
             EventSystem eventSystem = EventSystem.current;
-            if (eventSystem == null)
-            {
-                return false;
-            }
-
-            return eventSystem.IsPointerOverGameObject(pointerId);
+            return eventSystem != null && eventSystem.IsPointerOverGameObject(pointerId);
         }
 
-        private bool TryGetAimPoint(Ray ray, out Vector3 aimPoint)
+        private Vector3 GetAimPoint(Ray ray)
         {
-            aimPoint = Vector3.zero;
-            float closestDistance = float.MaxValue;
-            bool foundHit = false;
-            int hitCount = Physics.RaycastNonAlloc(ray, raycastHits, aimDistance, aimMask, QueryTriggerInteraction.Ignore);
+            int hitCount = Physics.RaycastNonAlloc(ray, hits, aimDistance, aimMask, QueryTriggerInteraction.Ignore);
+            float closest = float.MaxValue;
+            bool found = false;
+            Vector3 aimPoint = Vector3.zero;
+
             for (int i = 0; i < hitCount; i++)
             {
-                RaycastHit hit = raycastHits[i];
-                if (hit.collider == null || IsCannonCollider(hit.collider.transform))
-                {
+                RaycastHit hit = hits[i];
+                if (hit.distance >= closest || IsIgnored(hit.collider))
                     continue;
-                }
 
-                if (hit.collider.GetComponentInParent<CannonProjectile>() != null)
-                {
-                    continue;
-                }
-
-                if (hit.distance >= closestDistance)
-                {
-                    continue;
-                }
-
-                closestDistance = hit.distance;
+                closest = hit.distance;
                 aimPoint = hit.point;
-                foundHit = true;
+                found = true;
             }
 
-            if (foundHit)
-            {
-                return true;
-            }
+            if (found)
+                return aimPoint;
 
-            Transform cameraTransform = aimCamera.transform;
-            Plane aimPlane = new Plane(-cameraTransform.forward, cameraTransform.position + (cameraTransform.forward * emptyAimDistance));
-            float enter;
-            if (!aimPlane.Raycast(ray, out enter))
-            {
-                aimPoint = ray.GetPoint(emptyAimDistance);
-                return true;
-            }
-
-            aimPoint = ray.GetPoint(enter);
-            return true;
+            Transform cam = aimCamera.transform;
+            Vector3 planePoint = hasLevelCenter ? levelCenter : cam.position + cam.forward * emptyAimDistance;
+            Plane aimPlane = new Plane(-cam.forward, planePoint);
+            return aimPlane.Raycast(ray, out float enter) ? ray.GetPoint(enter) : ray.GetPoint(emptyAimDistance);
         }
 
-        private bool IsCannonCollider(Transform hitTransform)
+        private bool IsIgnored(Collider other)
         {
-            if (hitTransform == null)
-            {
-                return false;
-            }
-
-            if (hitTransform == transform)
-            {
+            if (other == null)
                 return true;
-            }
 
-            return hitTransform.IsChildOf(transform);
+            return other.transform.IsChildOf(transform) || other.GetComponentInParent<CannonProjectile>() != null;
         }
     }
 }

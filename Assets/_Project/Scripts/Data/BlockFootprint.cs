@@ -4,41 +4,23 @@ namespace SmashFast.Data
 {
     public class BlockFootprint
     {
-        public Vector3Int ClampSize(Vector3Int sizeInCells)
+        public Vector3Int ClampSize(Vector3Int size)
         {
-            return new Vector3Int(
-                Mathf.Max(1, sizeInCells.x),
-                Mathf.Max(1, sizeInCells.y),
-                Mathf.Max(1, sizeInCells.z));
+            return new Vector3Int(Mathf.Max(1, size.x), Mathf.Max(1, size.y), Mathf.Max(1, size.z));
         }
 
         public Vector3Int GetEffectiveSize(Vector3Int sizeInCells, Vector3 rotationEuler)
         {
             Vector3Int size = ClampSize(sizeInCells);
-            int roll = SnapRightAngle(rotationEuler.z);
-            int pitch = SnapRightAngle(rotationEuler.x);
-            int yaw = SnapRightAngle(rotationEuler.y);
 
-            if (roll == 90 || roll == 270)
-            {
-                int width = size.x;
-                size.x = size.y;
-                size.y = width;
-            }
+            if (IsSideways(rotationEuler.z))
+                (size.x, size.y) = (size.y, size.x);
 
-            if (pitch == 90 || pitch == 270)
-            {
-                int height = size.y;
-                size.y = size.z;
-                size.z = height;
-            }
+            if (IsSideways(rotationEuler.x))
+                (size.y, size.z) = (size.z, size.y);
 
-            if (yaw == 90 || yaw == 270)
-            {
-                int width = size.x;
-                size.x = size.z;
-                size.z = width;
-            }
+            if (IsSideways(rotationEuler.y))
+                (size.x, size.z) = (size.z, size.x);
 
             return size;
         }
@@ -48,120 +30,53 @@ namespace SmashFast.Data
             Vector3Int size = ClampSize(sizeInCells);
             int lengthAxis = 0;
             if (size.y >= size.x && size.y >= size.z)
-            {
                 lengthAxis = 1;
-            }
             else if (size.z >= size.x && size.z >= size.y)
-            {
                 lengthAxis = 2;
-            }
 
-            if (axis < 0)
-            {
-                axis = 0;
-            }
-
-            if (axis > 2)
-            {
-                axis = 2;
-            }
-
+            axis = Mathf.Clamp(axis, 0, 2);
             if (lengthAxis == axis)
-            {
                 return Vector3.zero;
-            }
 
-            if (lengthAxis == 0 && axis == 1)
+            return (lengthAxis, axis) switch
             {
-                return new Vector3(0f, 0f, -90f);
-            }
-
-            if (lengthAxis == 0 && axis == 2)
-            {
-                return new Vector3(0f, 90f, 0f);
-            }
-
-            if (lengthAxis == 1 && axis == 0)
-            {
-                return new Vector3(0f, 0f, 90f);
-            }
-
-            if (lengthAxis == 1 && axis == 2)
-            {
-                return new Vector3(90f, 0f, 0f);
-            }
-
-            if (lengthAxis == 2 && axis == 0)
-            {
-                return new Vector3(0f, -90f, 0f);
-            }
-
-            return new Vector3(-90f, 0f, 0f);
+                (0, 1) => new Vector3(0f, 0f, -90f),
+                (0, 2) => new Vector3(0f, 90f, 0f),
+                (1, 0) => new Vector3(0f, 0f, 90f),
+                (1, 2) => new Vector3(90f, 0f, 0f),
+                (2, 0) => new Vector3(0f, -90f, 0f),
+                _ => new Vector3(-90f, 0f, 0f)
+            };
         }
 
         public bool ContainsCell(Vector3Int anchor, Vector3Int effectiveSize, Vector3Int cell)
         {
             Vector3Int size = ClampSize(effectiveSize);
-            if (cell.x < anchor.x || cell.y < anchor.y || cell.z < anchor.z)
-            {
-                return false;
-            }
+            return cell.x >= anchor.x && cell.x < anchor.x + size.x
+                && cell.y >= anchor.y && cell.y < anchor.y + size.y
+                && cell.z >= anchor.z && cell.z < anchor.z + size.z;
+        }
 
-            if (cell.x >= anchor.x + size.x || cell.y >= anchor.y + size.y || cell.z >= anchor.z + size.z)
-            {
-                return false;
-            }
-
-            return true;
+        public bool ContainsXZ(Vector3Int anchor, Vector3Int effectiveSize, int x, int z)
+        {
+            Vector3Int size = ClampSize(effectiveSize);
+            return x >= anchor.x && x < anchor.x + size.x
+                && z >= anchor.z && z < anchor.z + size.z;
         }
 
         public bool Overlaps(Vector3Int anchorA, Vector3Int sizeA, Vector3Int anchorB, Vector3Int sizeB)
         {
-            Vector3Int clampedA = ClampSize(sizeA);
-            Vector3Int clampedB = ClampSize(sizeB);
-            if (anchorA.x + clampedA.x <= anchorB.x || anchorB.x + clampedB.x <= anchorA.x)
-            {
-                return false;
-            }
-
-            if (anchorA.y + clampedA.y <= anchorB.y || anchorB.y + clampedB.y <= anchorA.y)
-            {
-                return false;
-            }
-
-            if (anchorA.z + clampedA.z <= anchorB.z || anchorB.z + clampedB.z <= anchorA.z)
-            {
-                return false;
-            }
-
-            return true;
+            sizeA = ClampSize(sizeA);
+            sizeB = ClampSize(sizeB);
+            return anchorA.x < anchorB.x + sizeB.x && anchorB.x < anchorA.x + sizeA.x
+                && anchorA.y < anchorB.y + sizeB.y && anchorB.y < anchorA.y + sizeA.y
+                && anchorA.z < anchorB.z + sizeB.z && anchorB.z < anchorA.z + sizeA.z;
         }
 
-        public bool ContainsXZ(Vector3Int anchor, Vector3Int effectiveSize, int cellX, int cellZ)
+        private bool IsSideways(float degrees)
         {
-            Vector3Int size = ClampSize(effectiveSize);
-            if (cellX < anchor.x || cellZ < anchor.z)
-            {
-                return false;
-            }
-
-            if (cellX >= anchor.x + size.x || cellZ >= anchor.z + size.z)
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        private int SnapRightAngle(float degrees)
-        {
-            int angle = Mathf.RoundToInt(Mathf.Repeat(degrees, 360f));
-            if (angle >= 360)
-            {
-                angle = 0;
-            }
-
-            return angle;
+            int angle = Mathf.RoundToInt(Mathf.Repeat(degrees, 360f)) % 360;
+            return angle == 90 || angle == 270;
         }
     }
 }

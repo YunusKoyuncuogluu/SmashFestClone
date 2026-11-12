@@ -15,135 +15,68 @@ namespace SmashFast.UI.Panels
         [SerializeField] private Button closeButton;
         [SerializeField] private Button homeButton;
 
-        private UIManager uiManager;
+        private UIManager ui;
         private ISceneFlowManager sceneFlow;
         private IPlayerProgressService progress;
-        private GameSessionSlot sessionSlot;
+        private GameSessionSlot session;
         private bool isBusy;
 
+        private bool IsInGame => session.Current != null;
+
         [Inject]
-        public void Construct(
-            UIManager uiManager,
-            ISceneFlowManager sceneFlow,
-            IPlayerProgressService progress,
-            GameSessionSlot sessionSlot)
+        public void Construct(UIManager ui, ISceneFlowManager sceneFlow, IPlayerProgressService progress, GameSessionSlot session)
         {
-            this.uiManager = uiManager;
+            this.ui = ui;
             this.sceneFlow = sceneFlow;
             this.progress = progress;
-            this.sessionSlot = sessionSlot;
-        }
-
-        protected override void OnPanelOpened()
-        {
-            isBusy = false;
-            if (progress != null && soundToggle != null)
-            {
-                soundToggle.SetIsOnWithoutNotify(progress.SoundEnabled);
-            }
-
-            if (progress != null && hapticsToggle != null)
-            {
-                hapticsToggle.SetIsOnWithoutNotify(progress.HapticsEnabled);
-            }
-
-            SetGameplayInput(false);
-            RefreshHomeButton();
-        }
-
-        private void SetGameplayInput(bool enabled)
-        {
-            if (sessionSlot == null || sessionSlot.Current == null)
-            {
-                return;
-            }
-
-            sessionSlot.Current.SetGameplayInputEnabled(enabled);
-        }
-
-        protected override void OnPanelClosed()
-        {
-            SetGameplayInput(true);
+            this.session = session;
         }
 
         private void Awake()
         {
             if (soundToggle != null)
-            {
-                soundToggle.onValueChanged.AddListener(HandleSoundChanged);
-            }
+                soundToggle.onValueChanged.AddListener(enabled => progress.SetSoundEnabled(enabled));
 
             if (hapticsToggle != null)
-            {
-                hapticsToggle.onValueChanged.AddListener(HandleHapticsChanged);
-            }
+                hapticsToggle.onValueChanged.AddListener(enabled => progress.SetHapticsEnabled(enabled));
 
             if (closeButton != null)
-            {
-                closeButton.onClick.AddListener(HandleClose);
-            }
+                closeButton.onClick.AddListener(Close);
 
             if (homeButton != null)
             {
-                homeButton.onClick.AddListener(HandleHome);
+                homeButton.onClick.AddListener(() => GoHome().Forget());
                 homeButton.gameObject.SetActive(false);
             }
         }
 
-        private void RefreshHomeButton()
+        protected override void OnPanelOpened()
         {
-            if (homeButton == null)
-            {
-                return;
-            }
+            isBusy = false;
+            if (soundToggle != null)
+                soundToggle.SetIsOnWithoutNotify(progress.SoundEnabled);
 
-            bool inGame = sessionSlot != null && sessionSlot.Current != null;
-            homeButton.gameObject.SetActive(inGame);
+            if (hapticsToggle != null)
+                hapticsToggle.SetIsOnWithoutNotify(progress.HapticsEnabled);
+
+            if (homeButton != null)
+                homeButton.gameObject.SetActive(IsInGame);
+
+            SetGameplayInput(false);
         }
 
-        private void HandleSoundChanged(bool enabled)
+        protected override void OnPanelClosed() => SetGameplayInput(true);
+
+        private void SetGameplayInput(bool enabled) => session.Current?.SetGameplayInputEnabled(enabled);
+
+        private void Close() => ui.HidePopup<SettingsPopup>();
+
+        private async UniTaskVoid GoHome()
         {
-            if (progress == null)
-            {
+            if (isBusy)
                 return;
-            }
-
-            progress.SetSoundEnabled(enabled);
-        }
-
-        private void HandleHapticsChanged(bool enabled)
-        {
-            if (progress == null)
-            {
-                return;
-            }
-
-            progress.SetHapticsEnabled(enabled);
-        }
-
-        private void HandleClose()
-        {
-            if (uiManager == null)
-            {
-                return;
-            }
-
-            uiManager.HidePopup<SettingsPopup>();
-        }
-
-        private void HandleHome()
-        {
-            if (isBusy || sceneFlow == null)
-            {
-                return;
-            }
 
             isBusy = true;
-            GoHomeAsync().Forget();
-        }
-
-        private async UniTaskVoid GoHomeAsync()
-        {
             await sceneFlow.LoadMainMenuAsync();
             isBusy = false;
         }

@@ -7,86 +7,71 @@ namespace SmashFast.Core.Pooling
 {
     public class UniversalObjectPool : IUniversalObjectPool, IInitializable
     {
-        private Transform poolRootTransform;
-        private readonly PoolConfigSO poolConfig;
-        private readonly BlockCatalogSO blockCatalog;
-        private readonly Dictionary<int, Stack<GameObject>> pools;
-        private readonly Dictionary<int, int> instanceToPrefabIdMap;
-        private readonly Dictionary<int, IPoolable[]> poolablesByInstanceId;
-        private readonly List<GameObject> activeInstances;
+        private const int DefaultCatalogPrewarm = 4;
+
+        private readonly PoolConfigSO config;
+        private readonly BlockCatalogSO catalog;
+        private readonly Dictionary<int, Stack<GameObject>> pools = new Dictionary<int, Stack<GameObject>>(32);
+        private readonly Dictionary<int, int> prefabIdByInstance = new Dictionary<int, int>(256);
+        private readonly Dictionary<int, IPoolable[]> poolables = new Dictionary<int, IPoolable[]>(256);
+        private readonly List<GameObject> active = new List<GameObject>(256);
+
+        private Transform root;
         private bool isReady;
 
-        public UniversalObjectPool(
-            [InjectOptional] PoolConfigSO poolConfig,
-            [InjectOptional] BlockCatalogSO blockCatalog)
+        public UniversalObjectPool([InjectOptional] PoolConfigSO config, [InjectOptional] BlockCatalogSO catalog)
         {
-            this.poolConfig = poolConfig;
-            this.blockCatalog = blockCatalog;
-            pools = new Dictionary<int, Stack<GameObject>>(32);
-            instanceToPrefabIdMap = new Dictionary<int, int>(256);
-            poolablesByInstanceId = new Dictionary<int, IPoolable[]>(256);
-            activeInstances = new List<GameObject>(256);
+            this.config = config;
+            this.catalog = catalog;
         }
 
         public void Initialize()
         {
             if (isReady)
-            {
                 return;
-            }
 
             isReady = true;
-            EnsureRoot();
-            RegisterConfiguredPools();
-            RegisterCatalogPools();
+            CreateRoot();
+            PrewarmConfigPools();
+            PrewarmCatalogPools();
         }
 
         public void RegisterPrefab(GameObject prefab, int initialSize)
         {
-            EnsureReady();
+            Initialize();
             if (prefab == null)
-            {
                 return;
-            }
 
             int prefabId = prefab.GetInstanceID();
-            Stack<GameObject> stack = GetOrCreatePool(prefabId);
-            int targetCount = initialSize > 0 ? initialSize : 0;
-            int missing = targetCount - stack.Count;
+            Stack<GameObject> pool = GetPool(prefabId);
+            int missing = Mathf.Max(0, initialSize) - pool.Count;
             for (int i = 0; i < missing; i++)
             {
                 GameObject instance = CreateInstance(prefab);
-                InvokePoolables(instance, false);
-                ReturnToPool(instance, prefabId);
+                NotifyDespawned(instance);
+                Store(instance, prefabId);
             }
         }
 
         public GameObject Spawn(GameObject prefab, Vector3 position, Quaternion rotation, Transform parent = null)
         {
-            EnsureReady();
+            Initialize();
             if (prefab == null)
-            {
                 return null;
-            }
 
             int prefabId = prefab.GetInstanceID();
-            Stack<GameObject> stack = GetOrCreatePool(prefabId);
-            GameObject instance = PopLiveInstance(stack);
+            GameObject instance = TakeFromPool(GetPool(prefabId));
             if (instance == null)
-            {
                 instance = CreateInstance(prefab);
-            }
 
-            Transform parentTransform = parent != null ? parent : poolRootTransform;
             Transform instanceTransform = instance.transform;
-            instanceTransform.SetParent(parentTransform, false);
+            instanceTransform.SetParent(parent != null ? parent : root, false);
             instanceTransform.SetPositionAndRotation(position, rotation);
             instance.SetActive(true);
 
-            int instanceId = instance.GetInstanceID();
-            instanceToPrefabIdMap[instanceId] = prefabId;
-            activeInstances.Add(instance);
-            InvokePoolables(instance, true);
+            prefabIdByInstance[instance.GetInstanceID()] = prefabId;
+            active.Add(instance);
+            NotifySpawned(instance);
             return instance;
         }
 
@@ -94,20 +79,11 @@ namespace SmashFast.Core.Pooling
         {
             GameObject instance = Spawn(prefab, position, rotation, parent);
             if (instance == null)
-            {
                 return null;
-            }
 
-            T component = instance.GetComponent<T>();
-            if (component == null)
-            {
-                component = instance.GetComponentInChildren<T>(true);
-            }
-
+            T component = instance.GetComponentInChildren<T>(true);
             if (component != null)
-            {
                 return component;
-            }
 
             Despawn(instance);
             return null;
@@ -116,148 +92,92 @@ namespace SmashFast.Core.Pooling
         public void Despawn(GameObject instance)
         {
             if (instance == null)
-            {
                 return;
-            }
 
             int instanceId = instance.GetInstanceID();
-            int prefabId;
-            if (!instanceToPrefabIdMap.TryGetValue(instanceId, out prefabId))
-            {
+            if (!prefabIdByInstance.TryGetValue(instanceId, out int prefabId))
                 return;
-            }
 
-            instanceToPrefabIdMap.Remove(instanceId);
+            prefabIdByInstance.Remove(instanceId);
             RemoveActive(instance);
-            InvokePoolables(instance, false);
-            ReturnToPool(instance, prefabId);
+            NotifyDespawned(instance);
+            Store(instance, prefabId);
         }
 
         public void DespawnAllActive()
         {
-            while (activeInstances.Count > 0)
+            while (active.Count > 0)
             {
-                int lastIndex = activeInstances.Count - 1;
-                int countBefore = activeInstances.Count;
-                GameObject instance = activeInstances[lastIndex];
+                int last = active.Count - 1;
+                GameObject instance = active[last];
                 if (instance == null)
                 {
-                    activeInstances.RemoveAt(lastIndex);
+                    active.RemoveAt(last);
                     continue;
                 }
 
                 Despawn(instance);
-                if (activeInstances.Count == countBefore)
-                {
-                    activeInstances.RemoveAt(activeInstances.Count - 1);
-                }
+                if (active.Count == last + 1)
+                    active.RemoveAt(last);
             }
         }
 
         public void NotifyInstanceComponentsChanged(GameObject instance)
         {
-            if (instance == null)
-            {
-                return;
-            }
-
-            CachePoolables(instance);
+            if (instance != null)
+                CachePoolables(instance);
         }
 
-        private void EnsureRoot()
+        private void CreateRoot()
         {
-            if (poolRootTransform != null)
-            {
+            if (root != null)
                 return;
-            }
 
-            GameObject rootObject = new GameObject("UniversalPool");
-            poolRootTransform = rootObject.transform;
+            root = new GameObject("UniversalPool").transform;
             if (Application.isPlaying)
-            {
-                Object.DontDestroyOnLoad(rootObject);
-            }
+                Object.DontDestroyOnLoad(root.gameObject);
         }
 
-        private void EnsureReady()
+        private void PrewarmConfigPools()
         {
-            if (isReady)
-            {
+            if (config == null || config.CustomPools == null)
                 return;
-            }
 
-            Initialize();
+            foreach (PoolItemConfig item in config.CustomPools)
+                RegisterPrefab(item.prefab, item.initialSize);
         }
 
-        private void RegisterConfiguredPools()
+        private void PrewarmCatalogPools()
         {
-            if (poolConfig == null || poolConfig.CustomPools == null)
-            {
+            if (catalog == null)
                 return;
-            }
 
-            List<PoolItemConfig> configs = poolConfig.CustomPools;
-            int count = configs.Count;
-            for (int i = 0; i < count; i++)
+            int prewarm = config != null ? config.CatalogPrewarmCount : DefaultCatalogPrewarm;
+            for (int i = 0; i < catalog.BlockCount; i++)
             {
-                PoolItemConfig config = configs[i];
-                RegisterPrefab(config.prefab, config.initialSize);
+                if (catalog.TryGetBlockByIndex(i, out BlockDefinition definition) && definition.prefab != null)
+                    RegisterPrefab(definition.prefab, prewarm);
             }
         }
 
-        private void RegisterCatalogPools()
+        private Stack<GameObject> GetPool(int prefabId)
         {
-            if (blockCatalog == null)
+            if (!pools.TryGetValue(prefabId, out Stack<GameObject> pool))
             {
-                return;
+                pool = new Stack<GameObject>(8);
+                pools.Add(prefabId, pool);
             }
 
-            int prewarmCount = 4;
-            if (poolConfig != null)
-            {
-                prewarmCount = poolConfig.CatalogPrewarmCount;
-            }
-
-            int count = blockCatalog.BlockCount;
-            for (int i = 0; i < count; i++)
-            {
-                BlockDefinition definition;
-                if (!blockCatalog.TryGetBlockByIndex(i, out definition))
-                {
-                    continue;
-                }
-
-                if (definition.prefab == null)
-                {
-                    continue;
-                }
-
-                RegisterPrefab(definition.prefab, prewarmCount);
-            }
+            return pool;
         }
 
-        private Stack<GameObject> GetOrCreatePool(int prefabId)
+        private GameObject TakeFromPool(Stack<GameObject> pool)
         {
-            Stack<GameObject> stack;
-            if (pools.TryGetValue(prefabId, out stack))
+            while (pool.Count > 0)
             {
-                return stack;
-            }
-
-            stack = new Stack<GameObject>(8);
-            pools.Add(prefabId, stack);
-            return stack;
-        }
-
-        private GameObject PopLiveInstance(Stack<GameObject> stack)
-        {
-            while (stack.Count > 0)
-            {
-                GameObject instance = stack.Pop();
+                GameObject instance = pool.Pop();
                 if (instance != null)
-                {
                     return instance;
-                }
             }
 
             return null;
@@ -265,73 +185,56 @@ namespace SmashFast.Core.Pooling
 
         private GameObject CreateInstance(GameObject prefab)
         {
-            GameObject instance = Object.Instantiate(prefab, poolRootTransform);
+            GameObject instance = Object.Instantiate(prefab, root);
             CachePoolables(instance);
             return instance;
         }
 
-        private void ReturnToPool(GameObject instance, int prefabId)
+        private void Store(GameObject instance, int prefabId)
         {
-            if (instance == null)
-            {
-                return;
-            }
-
             instance.SetActive(false);
-            instance.transform.SetParent(poolRootTransform, false);
-            GetOrCreatePool(prefabId).Push(instance);
+            instance.transform.SetParent(root, false);
+            GetPool(prefabId).Push(instance);
         }
 
         private void CachePoolables(GameObject instance)
         {
-            poolablesByInstanceId[instance.GetInstanceID()] = instance.GetComponentsInChildren<IPoolable>(true);
+            poolables[instance.GetInstanceID()] = instance.GetComponentsInChildren<IPoolable>(true);
         }
 
-        private void InvokePoolables(GameObject instance, bool spawned)
+        private IPoolable[] GetPoolables(GameObject instance)
         {
             int instanceId = instance.GetInstanceID();
-            IPoolable[] poolables;
-            if (!poolablesByInstanceId.TryGetValue(instanceId, out poolables) || poolables == null)
+            if (!poolables.TryGetValue(instanceId, out IPoolable[] cached) || cached == null)
             {
                 CachePoolables(instance);
-                poolables = poolablesByInstanceId[instanceId];
+                cached = poolables[instanceId];
             }
 
-            int count = poolables.Length;
-            for (int i = 0; i < count; i++)
-            {
-                IPoolable poolable = poolables[i];
-                if (poolable == null)
-                {
-                    continue;
-                }
+            return cached;
+        }
 
-                if (spawned)
-                {
-                    poolable.OnSpawned();
-                }
-                else
-                {
-                    poolable.OnDespawned();
-                }
-            }
+        private void NotifySpawned(GameObject instance)
+        {
+            foreach (IPoolable poolable in GetPoolables(instance))
+                poolable?.OnSpawned();
+        }
+
+        private void NotifyDespawned(GameObject instance)
+        {
+            foreach (IPoolable poolable in GetPoolables(instance))
+                poolable?.OnDespawned();
         }
 
         private void RemoveActive(GameObject instance)
         {
-            int count = activeInstances.Count;
-            for (int i = 0; i < count; i++)
-            {
-                if (activeInstances[i] != instance)
-                {
-                    continue;
-                }
-
-                int last = count - 1;
-                activeInstances[i] = activeInstances[last];
-                activeInstances.RemoveAt(last);
+            int index = active.IndexOf(instance);
+            if (index < 0)
                 return;
-            }
+
+            int last = active.Count - 1;
+            active[index] = active[last];
+            active.RemoveAt(last);
         }
     }
 }

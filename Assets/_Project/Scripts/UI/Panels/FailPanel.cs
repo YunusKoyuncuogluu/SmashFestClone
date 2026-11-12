@@ -13,59 +13,39 @@ namespace SmashFast.UI.Panels
         [SerializeField] private Button mainMenuButton;
 
         private ISceneFlowManager sceneFlow;
-        private GameSessionSlot sessionSlot;
+        private GameSessionSlot session;
         private bool isBusy;
 
         [Inject]
-        public void Construct(ISceneFlowManager sceneFlow, GameSessionSlot sessionSlot)
+        public void Construct(ISceneFlowManager sceneFlow, GameSessionSlot session)
         {
             this.sceneFlow = sceneFlow;
-            this.sessionSlot = sessionSlot;
-        }
-
-        protected override void OnPanelOpened()
-        {
-            isBusy = false;
+            this.session = session;
         }
 
         private void Awake()
         {
             if (retryButton != null)
-            {
-                retryButton.onClick.AddListener(HandleRetry);
-            }
+                retryButton.onClick.AddListener(Retry);
 
             if (mainMenuButton != null)
-            {
-                mainMenuButton.onClick.AddListener(HandleMainMenu);
-            }
+                mainMenuButton.onClick.AddListener(() => GoToMainMenu().Forget());
         }
 
-        private void HandleRetry()
+        protected override void OnPanelOpened() => isBusy = false;
+
+        private void Retry()
         {
-            if (isBusy || sessionSlot == null || sessionSlot.Current == null)
-            {
+            if (!isBusy)
+                session.Current?.RetryLevel();
+        }
+
+        private async UniTaskVoid GoToMainMenu()
+        {
+            if (isBusy)
                 return;
-            }
 
             isBusy = true;
-            sessionSlot.Current.RetryLevel();
-            isBusy = false;
-        }
-
-        private void HandleMainMenu()
-        {
-            if (isBusy || sceneFlow == null)
-            {
-                return;
-            }
-
-            isBusy = true;
-            ReturnToMenuAsync().Forget();
-        }
-
-        private async UniTaskVoid ReturnToMenuAsync()
-        {
             await sceneFlow.LoadMainMenuAsync();
             isBusy = false;
         }

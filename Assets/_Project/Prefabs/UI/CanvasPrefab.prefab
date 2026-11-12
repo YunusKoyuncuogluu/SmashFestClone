@@ -117,6 +117,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SmashFast.Runtime::SmashFast.UI.UIManager
   catalog: {fileID: 11400000, guid: 85763514a8a782148827de0300245693, type: 2}
+  panelsRoot: {fileID: 5100000000000000002}
+  popupsRoot: {fileID: 5100000000000000004}
 --- !u!1 &5100000000000000001
 GameObject:
   m_ObjectHideFlags: 0

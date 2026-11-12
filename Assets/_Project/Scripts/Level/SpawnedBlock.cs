@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using SmashFast.Core.Effects;
@@ -5,16 +6,17 @@ using SmashFast.Core.Pooling;
 using SmashFast.Data;
 using SmashFast.Gameplay.Cannon;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace SmashFast.Level
 {
     public class SpawnedBlock : MonoBehaviour, IPoolable
     {
-        private const int HoldGraceTicks = 10;
-        private const float BodyLinearDamping = 0.05f;
-        private const float BodyAngularDamping = 0.8f;
-        private const float BodyMaxDepenetrationVelocity = 3f;
-        private const float BodySleepThreshold = 0.1f;
+        private const int HoldTicks = 10;
+        private const float LinearDamping = 0.05f;
+        private const float AngularDamping = 0.8f;
+        private const float MaxDepenetrationVelocity = 3f;
+        private const float SleepThreshold = 0.1f;
 
         [SerializeField] private GameObject intactVisual;
         [SerializeField] private GameObject fracturedVisual;
@@ -27,245 +29,125 @@ namespace SmashFast.Level
         [SerializeField, Min(0f)] private float fragmentSpinSpeed = 10f;
 
         private Rigidbody body;
-        private Rigidbody[] fracturePieces;
-        private float[] fracturePieceMasses;
-        private Vector3[] fracturePiecePositions;
-        private Quaternion[] fracturePieceRotations;
+        private Rigidbody[] pieces;
+        private float[] pieceMasses;
+        private Vector3[] piecePositions;
+        private Quaternion[] pieceRotations;
         private Renderer[] tableTopRenderers;
-        private ShrinkFadeEffect fadeEffect;
-        private IDestructibleTracker destructibleTracker;
-        private IUniversalObjectPool objectPool;
-        private BlockMaterialType materialType;
+        private ShrinkFadeEffect fade;
+        private IDestructibleTracker tracker;
+        private IUniversalObjectPool pool;
+        private BlockMaterialType material;
+        private float massMultiplier = 1f;
         private bool isKinematicBase;
         private bool isTarget;
         private bool isBroken;
-        private float massMultiplier = 1f;
         private bool isHolding;
-        private int holdTicksRemaining;
+        private int holdTicksLeft;
         private int groundLayer = -1;
-        private CancellationTokenSource returnPoolCts;
+        private int breakId;
+
+        private bool IsFragile => material == BlockMaterialType.Glass || material == BlockMaterialType.CeramicJar;
 
         private void Awake()
         {
             body = GetComponent<Rigidbody>();
             groundLayer = LayerMask.NameToLayer("Ground");
-            CacheFracturePieces();
+            CachePieces();
             ShowIntact();
-        }
-
-        private void CacheFracturePieces()
-        {
-            if (fracturedVisual == null)
-            {
-                return;
-            }
-
-            fracturePieces = fracturedVisual.GetComponentsInChildren<Rigidbody>(true);
-            int count = fracturePieces.Length;
-            fracturePieceMasses = new float[count];
-            fracturePiecePositions = new Vector3[count];
-            fracturePieceRotations = new Quaternion[count];
-            Transform[] pieceTransforms = new Transform[count];
-            for (int i = 0; i < count; i++)
-            {
-                Transform pieceTransform = fracturePieces[i].transform;
-                pieceTransforms[i] = pieceTransform;
-                fracturePieceMasses[i] = fracturePieces[i].mass;
-                fracturePiecePositions[i] = pieceTransform.localPosition;
-                fracturePieceRotations[i] = pieceTransform.localRotation;
-            }
-
-            fadeEffect = new ShrinkFadeEffect(pieceTransforms, fracturedVisual.GetComponentsInChildren<Renderer>(true));
-        }
-
-        private void ResetFracturePieces(Vector3 linearVelocity, Vector3 angularVelocity, Vector3 pushDirection)
-        {
-            if (fracturePieces == null)
-            {
-                return;
-            }
-
-            fadeEffect.Restore();
-            int count = fracturePieces.Length;
-            for (int i = 0; i < count; i++)
-            {
-                Rigidbody piece = fracturePieces[i];
-                Transform pieceTransform = piece.transform;
-                pieceTransform.SetLocalPositionAndRotation(fracturePiecePositions[i], fracturePieceRotations[i]);
-                piece.mass = fracturePieceMasses[i] * massMultiplier;
-                if (piece.isKinematic)
-                {
-                    continue;
-                }
-
-                Vector3 outward = pieceTransform.position - transform.position;
-                outward.y = 0f;
-                outward = outward.sqrMagnitude > 0.0001f ? outward.normalized : Random.onUnitSphere;
-                outward.y = 0f;
-                piece.linearVelocity = linearVelocity
-                    + (outward * (fragmentBurstSpeed * Random.Range(0.5f, 1.2f)))
-                    + (pushDirection * (fragmentPushSpeed * Random.Range(0.6f, 1.1f)))
-                    + (Vector3.up * (fragmentLiftSpeed * Random.Range(0.2f, 1f)));
-                piece.angularVelocity = angularVelocity + (Random.insideUnitSphere * fragmentSpinSpeed);
-            }
         }
 
         public void Initialize(
             BlockDefinition definition,
             Vector3 layoutScale,
-            float globalBlockScale,
+            float globalScale,
             float tableHeightFactor,
             Vector3Int sizeInCells,
-            float blockMassMultiplier,
+            float massMultiplier,
             IDestructibleTracker tracker,
             IUniversalObjectPool pool,
             FadeMaterialLibrary fadeLibrary)
         {
-            CancelReturnPool();
-
+            breakId++;
             isKinematicBase = definition.isKinematicBase;
-            materialType = definition.materialType;
+            material = definition.materialType;
             isTarget = definition.IsTarget();
             isBroken = false;
             isHolding = false;
-            massMultiplier = blockMassMultiplier;
-            destructibleTracker = tracker;
-            objectPool = pool;
-            if (fadeEffect != null)
-            {
-                fadeEffect.Prepare(fadeLibrary);
-            }
+            this.massMultiplier = massMultiplier;
+            this.tracker = tracker;
+            this.pool = pool;
 
-            ApplyScale(layoutScale, globalBlockScale, tableHeightFactor, sizeInCells);
+            if (fade != null)
+                fade.Prepare(fadeLibrary);
+
+            ApplyScale(layoutScale, globalScale, tableHeightFactor, sizeInCells);
             ShowIntact();
             ConfigureBody((definition.mass > 0f ? definition.mass : 1f) * massMultiplier);
         }
 
-        public void ApplyEditorPreviewVisuals(Vector3 layoutScale, float globalBlockScale, float tableHeightFactor, Vector3Int sizeInCells)
+        public void ApplyEditorPreviewVisuals(Vector3 layoutScale, float globalScale, float tableHeightFactor, Vector3Int sizeInCells)
         {
-            ApplyScale(layoutScale, globalBlockScale, tableHeightFactor, sizeInCells);
+            ApplyScale(layoutScale, globalScale, tableHeightFactor, sizeInCells);
             ShowIntact();
         }
 
-        public void ApplyEditorPreviewVisuals()
-        {
-            ShowIntact();
-        }
+        public void ApplyEditorPreviewVisuals() => ShowIntact();
 
         public void Hold()
         {
             if (body == null || body.isKinematic)
-            {
                 return;
-            }
 
             isHolding = true;
-            holdTicksRemaining = HoldGraceTicks;
+            holdTicksLeft = HoldTicks;
             body.Sleep();
         }
 
         private void FixedUpdate()
         {
             if (!isHolding)
-            {
                 return;
-            }
 
-            if (holdTicksRemaining > 0)
+            if (holdTicksLeft > 0)
             {
-                holdTicksRemaining--;
+                holdTicksLeft--;
                 body.Sleep();
                 return;
             }
 
             if (!body.IsSleeping())
-            {
                 isHolding = false;
-            }
         }
 
         public void OnSpawned()
         {
-            CancelReturnPool();
+            breakId++;
             isBroken = false;
             isTarget = false;
-            destructibleTracker = null;
-            objectPool = null;
-            materialType = BlockMaterialType.TableFoundation;
+            tracker = null;
+            pool = null;
+            material = BlockMaterialType.TableFoundation;
             ShowIntact();
         }
 
         public void OnDespawned()
         {
-            CancelReturnPool();
+            breakId++;
             UnregisterTarget();
-            destructibleTracker = null;
-            objectPool = null;
+            tracker = null;
+            pool = null;
             ShowIntact();
-        }
-
-        private void ApplyScale(Vector3 layoutScale, float globalBlockScale, float tableHeightFactor, Vector3Int sizeInCells)
-        {
-            Vector3 globalScale = Vector3.one * globalBlockScale;
-            if (tableTop == null)
-            {
-                Vector3 blockScale = layoutScale == Vector3.zero ? Vector3.one : layoutScale;
-                transform.localScale = Vector3.Scale(blockScale, globalScale);
-                return;
-            }
-
-            float heightFactor = Mathf.Max(1f, tableHeightFactor);
-            transform.localScale = new Vector3(globalBlockScale, globalBlockScale * heightFactor, globalBlockScale);
-            float topScaleX = Mathf.Max(1, sizeInCells.x);
-            float topScaleZ = Mathf.Max(1, sizeInCells.z);
-            Vector3 previousScale = tableTop.localScale;
-            Vector3 previousPosition = tableTop.localPosition;
-            tableTop.localScale = new Vector3(topScaleX, 1f / heightFactor, topScaleZ);
-            tableTop.localPosition = new Vector3(
-                previousPosition.x / previousScale.x * topScaleX,
-                previousPosition.y,
-                previousPosition.z / previousScale.z * topScaleZ);
-            AlignTableTop(globalBlockScale * heightFactor * 0.5f);
-        }
-
-        private void AlignTableTop(float topHeightAboveCenter)
-        {
-            if (tableTopRenderers == null || tableTopRenderers.Length == 0)
-            {
-                tableTopRenderers = tableTop.GetComponentsInChildren<Renderer>(true);
-            }
-
-            if (tableTopRenderers.Length == 0)
-            {
-                return;
-            }
-
-            float currentTop = float.MinValue;
-            for (int i = 0; i < tableTopRenderers.Length; i++)
-            {
-                float rendererTop = tableTopRenderers[i].bounds.max.y;
-                if (rendererTop > currentTop)
-                {
-                    currentTop = rendererTop;
-                }
-            }
-
-            float delta = (transform.position.y + topHeightAboveCenter) - currentTop;
-            tableTop.position += Vector3.up * delta;
         }
 
         private void OnCollisionEnter(Collision collision)
         {
-            if (!isTarget || isBroken || collision == null)
-            {
+            if (!isTarget || isBroken)
                 return;
-            }
 
             Collider other = collision.collider;
             if (other == null)
-            {
                 return;
-            }
 
             if (groundLayer >= 0 && other.gameObject.layer == groundLayer)
             {
@@ -273,19 +155,8 @@ namespace SmashFast.Level
                 return;
             }
 
-            if (materialType != BlockMaterialType.Glass && materialType != BlockMaterialType.CeramicJar)
-            {
+            if (!IsFragile || other.GetComponentInParent<CannonProjectile>() == null)
                 return;
-            }
-
-            CannonProjectile projectile;
-            bool hitByCannonBall = other.TryGetComponent(out projectile)
-                || other.GetComponentInParent<CannonProjectile>() != null;
-
-            if (!hitByCannonBall)
-            {
-                return;
-            }
 
             Vector3 push = transform.position - other.transform.position;
             push.y = 0f;
@@ -294,69 +165,141 @@ namespace SmashFast.Level
 
         private void Break(Vector3 pushDirection)
         {
-            if (isBroken || !isTarget)
-            {
-                return;
-            }
-
             isBroken = true;
             UnregisterTarget();
 
             if (fracturedVisual == null)
             {
-                ReturnPool();
+                ReturnToPool();
                 return;
             }
 
             ShowFractured(pushDirection);
-            ScheduleReturnPool().Forget();
+            DespawnAfterBreak(++breakId).Forget();
+        }
+
+        private void CachePieces()
+        {
+            if (fracturedVisual == null)
+                return;
+
+            pieces = fracturedVisual.GetComponentsInChildren<Rigidbody>(true);
+            int count = pieces.Length;
+            pieceMasses = new float[count];
+            piecePositions = new Vector3[count];
+            pieceRotations = new Quaternion[count];
+            Transform[] pieceTransforms = new Transform[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                Transform piece = pieces[i].transform;
+                pieceTransforms[i] = piece;
+                pieceMasses[i] = pieces[i].mass;
+                piecePositions[i] = piece.localPosition;
+                pieceRotations[i] = piece.localRotation;
+            }
+
+            fade = new ShrinkFadeEffect(pieceTransforms, fracturedVisual.GetComponentsInChildren<Renderer>(true));
+        }
+
+        private void LaunchPieces(Vector3 linearVelocity, Vector3 angularVelocity, Vector3 pushDirection)
+        {
+            if (pieces == null)
+                return;
+
+            fade.Restore();
+            for (int i = 0; i < pieces.Length; i++)
+            {
+                Rigidbody piece = pieces[i];
+                piece.transform.SetLocalPositionAndRotation(piecePositions[i], pieceRotations[i]);
+                piece.mass = pieceMasses[i] * massMultiplier;
+                if (piece.isKinematic)
+                    continue;
+
+                Vector3 outward = piece.transform.position - transform.position;
+                outward.y = 0f;
+                outward = outward.sqrMagnitude > 0.0001f ? outward.normalized : Random.onUnitSphere;
+                outward.y = 0f;
+
+                piece.linearVelocity = linearVelocity
+                    + outward * (fragmentBurstSpeed * Random.Range(0.5f, 1.2f))
+                    + pushDirection * (fragmentPushSpeed * Random.Range(0.6f, 1.1f))
+                    + Vector3.up * (fragmentLiftSpeed * Random.Range(0.2f, 1f));
+                piece.angularVelocity = angularVelocity + Random.insideUnitSphere * fragmentSpinSpeed;
+            }
+        }
+
+        private void ApplyScale(Vector3 layoutScale, float globalScale, float tableHeightFactor, Vector3Int sizeInCells)
+        {
+            if (tableTop == null)
+            {
+                Vector3 blockScale = layoutScale == Vector3.zero ? Vector3.one : layoutScale;
+                transform.localScale = blockScale * globalScale;
+                return;
+            }
+
+            float heightFactor = Mathf.Max(1f, tableHeightFactor);
+            transform.localScale = new Vector3(globalScale, globalScale * heightFactor, globalScale);
+
+            float topScaleX = Mathf.Max(1, sizeInCells.x);
+            float topScaleZ = Mathf.Max(1, sizeInCells.z);
+            Vector3 oldScale = tableTop.localScale;
+            Vector3 oldPosition = tableTop.localPosition;
+            tableTop.localScale = new Vector3(topScaleX, 1f / heightFactor, topScaleZ);
+            tableTop.localPosition = new Vector3(
+                oldPosition.x / oldScale.x * topScaleX,
+                oldPosition.y,
+                oldPosition.z / oldScale.z * topScaleZ);
+
+            AlignTableTop(globalScale * heightFactor * 0.5f);
+        }
+
+        private void AlignTableTop(float heightAboveCenter)
+        {
+            if (tableTopRenderers == null || tableTopRenderers.Length == 0)
+                tableTopRenderers = tableTop.GetComponentsInChildren<Renderer>(true);
+
+            if (tableTopRenderers.Length == 0)
+                return;
+
+            float currentTop = float.MinValue;
+            foreach (Renderer topRenderer in tableTopRenderers)
+                currentTop = Mathf.Max(currentTop, topRenderer.bounds.max.y);
+
+            float offset = transform.position.y + heightAboveCenter - currentTop;
+            tableTop.position += Vector3.up * offset;
         }
 
         private void ShowIntact()
         {
-            if (fadeEffect != null)
-            {
-                fadeEffect.Restore();
-            }
+            if (fade != null)
+                fade.Restore();
 
             if (intactVisual != null)
-            {
                 intactVisual.SetActive(true);
-            }
 
             if (fracturedVisual != null)
-            {
                 fracturedVisual.SetActive(false);
-            }
         }
 
         private void ShowFractured(Vector3 pushDirection)
         {
             if (intactVisual != null)
-            {
                 intactVisual.SetActive(false);
-            }
 
-            if (fracturedVisual == null)
-            {
-                return;
-            }
-
-            Vector3 inheritedLinear = Vector3.zero;
-            Vector3 inheritedAngular = Vector3.zero;
+            Vector3 linearVelocity = Vector3.zero;
+            Vector3 angularVelocity = Vector3.zero;
             if (body != null && !body.isKinematic)
             {
-                inheritedLinear = body.linearVelocity;
-                inheritedAngular = body.angularVelocity;
+                linearVelocity = body.linearVelocity;
+                angularVelocity = body.angularVelocity;
             }
 
             fracturedVisual.SetActive(true);
-            ResetFracturePieces(inheritedLinear, inheritedAngular, pushDirection);
+            LaunchPieces(linearVelocity, angularVelocity, pushDirection);
 
             if (body == null)
-            {
                 return;
-            }
 
             isHolding = false;
             body.detectCollisions = false;
@@ -366,93 +309,55 @@ namespace SmashFast.Level
         private void ConfigureBody(float mass)
         {
             if (body == null)
-            {
                 return;
-            }
 
             body.mass = mass;
             body.isKinematic = isKinematicBase;
             body.useGravity = !isKinematicBase;
             body.detectCollisions = true;
-            body.linearDamping = BodyLinearDamping;
-            body.angularDamping = BodyAngularDamping;
-            body.maxDepenetrationVelocity = BodyMaxDepenetrationVelocity;
-            body.sleepThreshold = BodySleepThreshold;
+            body.linearDamping = LinearDamping;
+            body.angularDamping = AngularDamping;
+            body.maxDepenetrationVelocity = MaxDepenetrationVelocity;
+            body.sleepThreshold = SleepThreshold;
 
-            if (!body.isKinematic)
-            {
-                body.linearVelocity = Vector3.zero;
-                body.angularVelocity = Vector3.zero;
-                body.Sleep();
-            }
+            if (body.isKinematic)
+                return;
+
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+            body.Sleep();
         }
 
         private void UnregisterTarget()
         {
             if (!isTarget)
-            {
                 return;
-            }
 
             isTarget = false;
-            if (destructibleTracker != null)
-            {
-                destructibleTracker.UnregisterTarget();
-            }
+            tracker?.UnregisterTarget();
         }
 
-        private async UniTaskVoid ScheduleReturnPool()
+        private async UniTaskVoid DespawnAfterBreak(int id)
         {
-            CancelReturnPool();
-            returnPoolCts = new CancellationTokenSource();
-            CancellationToken token = returnPoolCts.Token;
-
-            bool canceled = await UniTask.Delay(
-                System.TimeSpan.FromSeconds(fragmentHoldSeconds),
-                DelayType.DeltaTime,
-                PlayerLoopTiming.Update,
-                token).SuppressCancellationThrow();
-
-            if (canceled || token.IsCancellationRequested)
-            {
+            CancellationToken token = this.GetCancellationTokenOnDestroy();
+            bool canceled = await UniTask.Delay(TimeSpan.FromSeconds(fragmentHoldSeconds), DelayType.DeltaTime, PlayerLoopTiming.Update, token)
+                .SuppressCancellationThrow();
+            if (canceled || id != breakId)
                 return;
-            }
 
-            canceled = await fadeEffect.PlayAsync(fragmentFadeSeconds, token);
-            if (canceled || token.IsCancellationRequested)
-            {
+            canceled = await fade.PlayAsync(fragmentFadeSeconds, token);
+            if (canceled || id != breakId)
                 return;
-            }
 
-            ReturnPool();
+            ReturnToPool();
         }
 
-        private void CancelReturnPool()
+        private void ReturnToPool()
         {
-            if (returnPoolCts == null)
-            {
-                return;
-            }
-
-            returnPoolCts.Cancel();
-            returnPoolCts.Dispose();
-            returnPoolCts = null;
-        }
-
-        private void ReturnPool()
-        {
-            if (objectPool != null)
-            {
-                objectPool.Despawn(gameObject);
-                return;
-            }
-
-            gameObject.SetActive(false);
-        }
-
-        private void OnDestroy()
-        {
-            CancelReturnPool();
+            if (pool != null)
+                pool.Despawn(gameObject);
+            else
+                gameObject.SetActive(false);
         }
     }
 }

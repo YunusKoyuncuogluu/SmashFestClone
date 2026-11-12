@@ -6,51 +6,44 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 using Zenject;
-
 using Object = UnityEngine.Object;
 
 namespace SmashFast.UI
 {
     public class UIManager : MonoBehaviour
     {
-        private const string PanelsRootName = "PanelsRoot";
-        private const string PopupsRootName = "PopupsRoot";
-
         [SerializeField] private UICatalogSO catalog;
+        [SerializeField] private RectTransform panelsRoot;
+        [SerializeField] private RectTransform popupsRoot;
+
+        private readonly Dictionary<Type, UIPanelBase> prefabs = new Dictionary<Type, UIPanelBase>(8);
+        private readonly Dictionary<Type, UIPanelBase> instances = new Dictionary<Type, UIPanelBase>(8);
+        private readonly List<UIPanelBase> openPopups = new List<UIPanelBase>(4);
 
         private DiContainer container;
-        private readonly Dictionary<Type, UIPanelBase> prefabsByType = new Dictionary<Type, UIPanelBase>(8);
-        private readonly Dictionary<Type, UIPanelBase> instancesByType = new Dictionary<Type, UIPanelBase>(8);
-        private readonly List<UIPanelBase> openPopups = new List<UIPanelBase>(4);
-        private Transform panelsRoot;
-        private Transform popupsRoot;
         private UIPanelBase activePanel;
-        private bool hierarchyReady;
+        private bool isReady;
 
         [Inject]
-        public void Construct(DiContainer injectedContainer, [InjectOptional] UICatalogSO injectedCatalog)
+        public void Construct(DiContainer container, [InjectOptional] UICatalogSO injectedCatalog)
         {
-            container = injectedContainer;
+            this.container = container;
             if (catalog == null)
-            {
                 catalog = injectedCatalog;
-            }
         }
+
+        private void Awake() => Setup();
 
         public T ShowPanel<T>() where T : UIPanelBase
         {
-            EnsureHierarchy();
+            Setup();
             HidePopups();
-            T panel = GetOrSpawn<T>(panelsRoot);
+            T panel = GetOrCreate<T>(panelsRoot);
             if (panel == null)
-            {
                 return null;
-            }
 
             if (activePanel != null && activePanel != panel)
-            {
                 activePanel.HideAsync().Forget();
-            }
 
             activePanel = panel;
             panel.transform.SetParent(panelsRoot, false);
@@ -60,41 +53,36 @@ namespace SmashFast.UI
 
         public T ShowPopup<T>() where T : UIPanelBase
         {
-            EnsureHierarchy();
-            T popup = GetOrSpawn<T>(popupsRoot);
+            Setup();
+            T popup = GetOrCreate<T>(popupsRoot);
             if (popup == null)
-            {
                 return null;
-            }
 
             popup.transform.SetParent(popupsRoot, false);
             popup.transform.SetAsLastSibling();
-            TrackPopup(popup);
+            if (!openPopups.Contains(popup))
+                openPopups.Add(popup);
+
             popup.ShowAsync().Forget();
             return popup;
         }
 
         public void HidePopup<T>() where T : UIPanelBase
         {
-            EnsureHierarchy();
-            UIPanelBase popup;
-            if (!instancesByType.TryGetValue(typeof(T), out popup) || popup == null)
-            {
+            Setup();
+            if (!instances.TryGetValue(typeof(T), out UIPanelBase popup) || popup == null)
                 return;
-            }
 
-            RemovePopup(popup);
+            openPopups.Remove(popup);
             popup.HideAsync().Forget();
         }
 
         public void HideAllPanels()
         {
-            EnsureHierarchy();
+            Setup();
             HidePopups();
             if (activePanel == null)
-            {
                 return;
-            }
 
             UIPanelBase panel = activePanel;
             activePanel = null;
@@ -103,69 +91,42 @@ namespace SmashFast.UI
 
         public void RemoveDuplicateEventSystems()
         {
-            EventSystem[] systems = Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-            EventSystem keeper = null;
-            int count = systems.Length;
-            for (int i = 0; i < count; i++)
-            {
-                EventSystem candidate = systems[i];
-                if (candidate != null && candidate.gameObject.scene.name == "DontDestroyOnLoad")
-                {
-                    keeper = candidate;
-                    break;
-                }
-            }
+            EventSystem[] systems = FindObjectsByType<EventSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            if (systems.Length == 0)
+                return;
 
-            if (keeper == null && count > 0)
+            EventSystem keeper = Array.Find(systems, system => system.gameObject.scene.name == "DontDestroyOnLoad");
+            if (keeper == null)
             {
                 keeper = systems[0];
-                if (keeper != null && Application.isPlaying)
-                {
-                    Object.DontDestroyOnLoad(keeper.gameObject);
-                }
+                if (Application.isPlaying)
+                    DontDestroyOnLoad(keeper.gameObject);
             }
 
-            for (int i = 0; i < count; i++)
+            foreach (EventSystem system in systems)
             {
-                EventSystem candidate = systems[i];
-                if (candidate == null || candidate == keeper)
-                {
-                    continue;
-                }
-
-                Object.Destroy(candidate.gameObject);
+                if (system != keeper)
+                    Destroy(system.gameObject);
             }
         }
 
-        private void Awake()
+        private void Setup()
         {
-            EnsureHierarchy();
-        }
-
-        private void EnsureHierarchy()
-        {
-            if (hierarchyReady)
-            {
+            if (isReady)
                 return;
-            }
 
-            hierarchyReady = true;
+            isReady = true;
             if (Application.isPlaying)
-            {
-                Object.DontDestroyOnLoad(gameObject);
-            }
+                DontDestroyOnLoad(gameObject);
 
             FitCanvas();
-            EnsureEventSystem();
-            panelsRoot = FindOrCreateRoot(transform, PanelsRootName);
-            popupsRoot = FindOrCreateRoot(transform, PopupsRootName);
+            SetupEventSystem();
             RegisterPrefabs();
         }
 
         private void FitCanvas()
         {
-            RectTransform rect = transform as RectTransform;
-            if (rect != null)
+            if (transform is RectTransform rect)
             {
                 rect.anchorMin = Vector2.zero;
                 rect.anchorMax = Vector2.one;
@@ -173,30 +134,21 @@ namespace SmashFast.UI
                 rect.offsetMax = Vector2.zero;
                 rect.pivot = new Vector2(0.5f, 0.5f);
                 if (rect.localScale.sqrMagnitude < 0.0001f)
-                {
                     rect.localScale = Vector3.one;
-                }
             }
 
-            Canvas canvas = GetComponent<Canvas>();
-            if (canvas == null)
-            {
+            if (!TryGetComponent(out Canvas canvas))
                 canvas = gameObject.AddComponent<Canvas>();
-            }
 
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            if (GetComponent<GraphicRaycaster>() == null)
-            {
+            if (!TryGetComponent(out GraphicRaycaster _))
                 gameObject.AddComponent<GraphicRaycaster>();
-            }
         }
 
         private void RegisterPrefabs()
         {
             if (catalog == null)
-            {
                 return;
-            }
 
             RegisterPrefab(catalog.MainMenuPanelPrefab);
             RegisterPrefab(catalog.GameHudPanelPrefab);
@@ -207,85 +159,32 @@ namespace SmashFast.UI
 
         private void RegisterPrefab(UIPanelBase prefab)
         {
-            if (prefab == null)
-            {
-                return;
-            }
-
-            prefabsByType[prefab.GetType()] = prefab;
+            if (prefab != null)
+                prefabs[prefab.GetType()] = prefab;
         }
 
-        private T GetOrSpawn<T>(Transform parent) where T : UIPanelBase
+        private T GetOrCreate<T>(Transform parent) where T : UIPanelBase
         {
-            Type panelType = typeof(T);
-            UIPanelBase existing;
-            if (instancesByType.TryGetValue(panelType, out existing) && existing != null)
-            {
+            Type type = typeof(T);
+            if (instances.TryGetValue(type, out UIPanelBase existing) && existing != null)
                 return (T)existing;
-            }
 
-            UIPanelBase prefab;
-            if (!prefabsByType.TryGetValue(panelType, out prefab) || prefab == null)
-            {
+            if (!prefabs.TryGetValue(type, out UIPanelBase prefab) || prefab == null)
                 return null;
-            }
 
-            if (container == null)
-            {
+            if (container == null || parent == null)
                 return null;
-            }
 
-            if (parent == null)
-            {
-                return null;
-            }
-
-            GameObject instanceObject = container.InstantiatePrefab(prefab.gameObject, parent);
-            T panel = instanceObject.GetComponent<T>();
+            GameObject instance = container.InstantiatePrefab(prefab.gameObject, parent);
+            T panel = instance.GetComponentInChildren<T>(true);
             if (panel == null)
             {
-                panel = instanceObject.GetComponentInChildren<T>(true);
-            }
-
-            if (panel == null)
-            {
-                Object.Destroy(instanceObject);
+                Destroy(instance);
                 return null;
             }
 
-            instancesByType[panelType] = panel;
+            instances[type] = panel;
             return panel;
-        }
-
-        private void TrackPopup(UIPanelBase popup)
-        {
-            int count = openPopups.Count;
-            for (int i = 0; i < count; i++)
-            {
-                if (openPopups[i] == popup)
-                {
-                    return;
-                }
-            }
-
-            openPopups.Add(popup);
-        }
-
-        private void RemovePopup(UIPanelBase popup)
-        {
-            int count = openPopups.Count;
-            for (int i = 0; i < count; i++)
-            {
-                if (openPopups[i] != popup)
-                {
-                    continue;
-                }
-
-                int last = count - 1;
-                openPopups[i] = openPopups[last];
-                openPopups.RemoveAt(last);
-                return;
-            }
         }
 
         private void HidePopups()
@@ -295,57 +194,25 @@ namespace SmashFast.UI
                 UIPanelBase popup = openPopups[i];
                 openPopups.RemoveAt(i);
                 if (popup != null)
-                {
                     popup.HideAsync().Forget();
-                }
             }
         }
 
-        private Transform FindOrCreateRoot(Transform canvasTransform, string rootName)
+        private void SetupEventSystem()
         {
-            Transform existing = canvasTransform.Find(rootName);
-            if (existing != null)
+            EventSystem eventSystem = FindAnyObjectByType<EventSystem>();
+            if (eventSystem == null)
             {
-                return existing;
+                eventSystem = new GameObject("EventSystem").AddComponent<EventSystem>();
+                eventSystem.gameObject.AddComponent<InputSystemUIInputModule>();
+            }
+            else if (!eventSystem.TryGetComponent(out InputSystemUIInputModule _))
+            {
+                eventSystem.gameObject.AddComponent<InputSystemUIInputModule>();
             }
 
-            GameObject rootObject = new GameObject(rootName, typeof(RectTransform));
-            RectTransform rect = rootObject.GetComponent<RectTransform>();
-            rect.SetParent(canvasTransform, false);
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-            rect.localScale = Vector3.one;
-            return rect;
-        }
-
-        private void EnsureEventSystem()
-        {
-            EventSystem eventSystem = Object.FindAnyObjectByType<EventSystem>();
-            if (eventSystem != null)
-            {
-                if (eventSystem.GetComponent<InputSystemUIInputModule>() == null)
-                {
-                    eventSystem.gameObject.AddComponent<InputSystemUIInputModule>();
-                }
-
-                if (Application.isPlaying)
-                {
-                    Object.DontDestroyOnLoad(eventSystem.gameObject);
-                }
-
-                return;
-            }
-
-            GameObject eventObject = new GameObject("EventSystem");
             if (Application.isPlaying)
-            {
-                Object.DontDestroyOnLoad(eventObject);
-            }
-
-            eventObject.AddComponent<EventSystem>();
-            eventObject.AddComponent<InputSystemUIInputModule>();
+                DontDestroyOnLoad(eventSystem.gameObject);
         }
     }
 }

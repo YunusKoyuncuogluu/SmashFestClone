@@ -16,100 +16,61 @@ namespace SmashFast.UI.Panels
         [SerializeField] private Button settingsButton;
         [SerializeField] private Button restartButton;
 
-        private UIManager uiManager;
-        private GameSessionSlot sessionSlot;
+        private UIManager ui;
+        private GameSessionSlot session;
         private int shownLevel = -1;
-        private int shownRemaining = -1;
-        private int shownMax = -1;
+        private int shownAmmo = -1;
+        private int shownMaxAmmo = -1;
 
         [Inject]
-        public void Construct(UIManager uiManager, GameSessionSlot sessionSlot)
+        public void Construct(UIManager ui, GameSessionSlot session)
         {
-            this.uiManager = uiManager;
-            this.sessionSlot = sessionSlot;
-        }
-
-        public void SetLevelNumber(int levelNumber)
-        {
-            if (levelNumber == shownLevel)
-            {
-                return;
-            }
-
-            shownLevel = levelNumber;
-            if (levelLabel == null)
-            {
-                return;
-            }
-
-            levelLabel.SetText(LevelFormat, levelNumber);
-        }
-
-        public void SetAmmo(int remaining, int max)
-        {
-            if (remaining == shownRemaining && max == shownMax)
-            {
-                return;
-            }
-
-            shownRemaining = remaining;
-            shownMax = max;
-            if (ammoLabel == null)
-            {
-                return;
-            }
-
-            ammoLabel.SetText(AmmoFormat, remaining, max);
-        }
-
-        protected override void OnPanelOpened()
-        {
-            RefreshFromSession();
+            this.ui = ui;
+            this.session = session;
         }
 
         private void Awake()
         {
             if (settingsButton != null)
-            {
-                settingsButton.onClick.AddListener(HandleSettings);
-            }
+                settingsButton.onClick.AddListener(OpenSettings);
 
             if (restartButton != null)
-            {
-                restartButton.onClick.AddListener(HandleRestart);
-            }
+                restartButton.onClick.AddListener(Restart);
         }
 
-        private void RefreshFromSession()
+        public void SetLevelNumber(int level)
         {
-            if (sessionSlot == null || sessionSlot.Current == null)
-            {
+            if (level == shownLevel)
                 return;
-            }
 
-            IGameSceneSession session = sessionSlot.Current;
-            SetLevelNumber(session.LevelNumber);
-            SetAmmo(session.RemainingAmmo, session.MaxAmmo);
+            shownLevel = level;
+            if (levelLabel != null)
+                levelLabel.SetText(LevelFormat, level);
         }
 
-        private void HandleSettings()
+        public void SetAmmo(int ammo, int maxAmmo)
         {
-            if (uiManager == null)
-            {
+            if (ammo == shownAmmo && maxAmmo == shownMaxAmmo)
                 return;
-            }
 
-            uiManager.ShowPopup<SettingsPopup>();
+            shownAmmo = ammo;
+            shownMaxAmmo = maxAmmo;
+            if (ammoLabel != null)
+                ammoLabel.SetText(AmmoFormat, ammo, maxAmmo);
         }
 
-        private void HandleRestart()
+        protected override void OnPanelOpened()
         {
-            if (sessionSlot == null || sessionSlot.Current == null)
-            {
+            IGameSceneSession current = session.Current;
+            if (current == null)
                 return;
-            }
 
-            sessionSlot.Current.RetryLevel();
+            SetLevelNumber(current.LevelNumber);
+            SetAmmo(current.RemainingAmmo, current.MaxAmmo);
         }
+
+        private void OpenSettings() => ui.ShowPopup<SettingsPopup>();
+
+        private void Restart() => session.Current?.RetryLevel();
     }
 }

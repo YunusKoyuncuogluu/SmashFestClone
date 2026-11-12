@@ -15,94 +15,56 @@ namespace SmashFast.UI.Panels
         [SerializeField] private Color lockedColor = new Color(0.22f, 0.22f, 0.24f, 1f);
         [SerializeField] private Color selectedColor = new Color(0.93f, 0.7f, 0.16f, 1f);
 
-        private RectTransform rectTransform;
-        private MainMenuPanel owner;
-        private int levelNumber;
-        private bool unlocked;
-        private bool selected;
+        private RectTransform rect;
+        private MainMenuPanel menu;
+        private int level;
+        private bool isUnlocked;
+        private bool isSelected;
 
-        public RectTransform RectTransform
+        public RectTransform Rect
         {
             get
             {
-                if (rectTransform == null)
-                {
-                    rectTransform = (RectTransform)transform;
-                }
+                if (rect == null)
+                    rect = (RectTransform)transform;
 
-                return rectTransform;
+                return rect;
             }
-        }
-
-        public void Configure(MainMenuPanel menu)
-        {
-            owner = menu;
-        }
-
-        public void Apply(int number, bool isUnlocked, bool isSelected)
-        {
-            if (number == levelNumber && isUnlocked == unlocked && isSelected == selected)
-            {
-                return;
-            }
-
-            levelNumber = number;
-            unlocked = isUnlocked;
-            selected = isSelected;
-            if (label != null)
-            {
-                label.SetText(LabelFormat, number);
-            }
-
-            if (button != null)
-            {
-                button.interactable = isUnlocked;
-            }
-
-            if (background == null)
-            {
-                return;
-            }
-
-            if (!isUnlocked)
-            {
-                background.color = lockedColor;
-                return;
-            }
-
-            if (isSelected)
-            {
-                background.color = selectedColor;
-                return;
-            }
-
-            background.color = unlockedColor;
         }
 
         private void Awake()
         {
-            rectTransform = (RectTransform)transform;
-            if (button == null)
-            {
-                button = GetComponent<Button>();
-            }
-
-            if (button == null)
-            {
+            if (button == null && !TryGetComponent(out button))
                 return;
-            }
 
-            button.onClick.AddListener(HandleClick);
+            button.onClick.AddListener(OnClick);
         }
 
-        private void HandleClick()
-        {
-            if (!unlocked || owner == null)
-            {
-                return;
-            }
+        public void Configure(MainMenuPanel menu) => this.menu = menu;
 
-            owner.SelectLevel(levelNumber);
+        public void Apply(int level, bool isUnlocked, bool isSelected)
+        {
+            if (level == this.level && isUnlocked == this.isUnlocked && isSelected == this.isSelected)
+                return;
+
+            this.level = level;
+            this.isUnlocked = isUnlocked;
+            this.isSelected = isSelected;
+
+            if (label != null)
+                label.SetText(LabelFormat, level);
+
+            if (button != null)
+                button.interactable = isUnlocked;
+
+            if (background != null)
+                background.color = !isUnlocked ? lockedColor : isSelected ? selectedColor : unlockedColor;
+        }
+
+        private void OnClick()
+        {
+            if (isUnlocked && menu != null)
+                menu.SelectLevel(level);
         }
     }
 }

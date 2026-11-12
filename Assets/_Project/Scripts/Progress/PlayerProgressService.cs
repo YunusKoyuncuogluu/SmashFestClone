@@ -10,130 +10,66 @@ namespace SmashFast.Progress
         private const string SoundEnabledKey = "SmashFast.SoundEnabled";
         private const string HapticsEnabledKey = "SmashFast.HapticsEnabled";
 
-        private int highestUnlockedLevel;
-        private int selectedLevelNumber;
-        private bool soundEnabled;
-        private bool hapticsEnabled;
-
-        public int HighestUnlockedLevel
-        {
-            get
-            {
-                return highestUnlockedLevel;
-            }
-        }
-
-        public int SelectedLevelNumber
-        {
-            get
-            {
-                return selectedLevelNumber;
-            }
-        }
-
-        public bool SoundEnabled
-        {
-            get
-            {
-                return soundEnabled;
-            }
-        }
-
-        public bool HapticsEnabled
-        {
-            get
-            {
-                return hapticsEnabled;
-            }
-        }
+        public int HighestUnlockedLevel { get; private set; }
+        public int SelectedLevelNumber { get; private set; }
+        public bool SoundEnabled { get; private set; }
+        public bool HapticsEnabled { get; private set; }
 
         public void Initialize()
         {
-            highestUnlockedLevel = PlayerPrefs.GetInt(HighestUnlockedKey, 1);
-            selectedLevelNumber = PlayerPrefs.GetInt(SelectedLevelKey, 1);
-            soundEnabled = PlayerPrefs.GetInt(SoundEnabledKey, 1) != 0;
-            hapticsEnabled = PlayerPrefs.GetInt(HapticsEnabledKey, 1) != 0;
-            if (highestUnlockedLevel < 1)
-            {
-                highestUnlockedLevel = 1;
-            }
-
-            if (selectedLevelNumber < 1)
-            {
-                selectedLevelNumber = 1;
-            }
-
-            if (selectedLevelNumber > highestUnlockedLevel)
-            {
-                selectedLevelNumber = highestUnlockedLevel;
-            }
-
+            HighestUnlockedLevel = Mathf.Max(1, PlayerPrefs.GetInt(HighestUnlockedKey, 1));
+            SelectedLevelNumber = Mathf.Clamp(PlayerPrefs.GetInt(SelectedLevelKey, 1), 1, HighestUnlockedLevel);
+            SoundEnabled = PlayerPrefs.GetInt(SoundEnabledKey, 1) != 0;
+            HapticsEnabled = PlayerPrefs.GetInt(HapticsEnabledKey, 1) != 0;
             ApplySound();
         }
 
-        public bool IsLevelUnlocked(int levelNumber)
+        public bool IsLevelUnlocked(int level) => level >= 1 && level <= HighestUnlockedLevel;
+
+        public void SetSelectedLevel(int level)
         {
-            return levelNumber >= 1 && levelNumber <= highestUnlockedLevel;
+            level = Mathf.Clamp(level, 1, HighestUnlockedLevel);
+            if (level == SelectedLevelNumber)
+                return;
+
+            SelectedLevelNumber = level;
+            Save(SelectedLevelKey, level);
         }
 
-        public void SetSelectedLevel(int levelNumber)
+        public void UnlockThrough(int level)
         {
-            int safeNumber = levelNumber < 1 ? 1 : levelNumber;
-            if (safeNumber > highestUnlockedLevel)
-            {
-                safeNumber = highestUnlockedLevel;
-            }
-
-            if (safeNumber == selectedLevelNumber)
-            {
+            if (level <= HighestUnlockedLevel)
                 return;
-            }
 
-            selectedLevelNumber = safeNumber;
-            PlayerPrefs.SetInt(SelectedLevelKey, selectedLevelNumber);
-            PlayerPrefs.Save();
-        }
-
-        public void UnlockThrough(int levelNumber)
-        {
-            if (levelNumber <= highestUnlockedLevel)
-            {
-                return;
-            }
-
-            highestUnlockedLevel = levelNumber;
-            PlayerPrefs.SetInt(HighestUnlockedKey, highestUnlockedLevel);
-            PlayerPrefs.Save();
+            HighestUnlockedLevel = level;
+            Save(HighestUnlockedKey, level);
         }
 
         public void SetSoundEnabled(bool enabled)
         {
-            if (soundEnabled == enabled)
-            {
+            if (SoundEnabled == enabled)
                 return;
-            }
 
-            soundEnabled = enabled;
-            PlayerPrefs.SetInt(SoundEnabledKey, soundEnabled ? 1 : 0);
-            PlayerPrefs.Save();
+            SoundEnabled = enabled;
+            Save(SoundEnabledKey, enabled ? 1 : 0);
             ApplySound();
         }
 
         public void SetHapticsEnabled(bool enabled)
         {
-            if (hapticsEnabled == enabled)
-            {
+            if (HapticsEnabled == enabled)
                 return;
-            }
 
-            hapticsEnabled = enabled;
-            PlayerPrefs.SetInt(HapticsEnabledKey, hapticsEnabled ? 1 : 0);
-            PlayerPrefs.Save();
+            HapticsEnabled = enabled;
+            Save(HapticsEnabledKey, enabled ? 1 : 0);
         }
 
-        private void ApplySound()
+        private void ApplySound() => AudioListener.volume = SoundEnabled ? 1f : 0f;
+
+        private void Save(string key, int value)
         {
-            AudioListener.volume = soundEnabled ? 1f : 0f;
+            PlayerPrefs.SetInt(key, value);
+            PlayerPrefs.Save();
         }
     }
 }

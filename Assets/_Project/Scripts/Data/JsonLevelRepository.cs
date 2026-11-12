@@ -10,7 +10,7 @@ namespace SmashFast.Data
 
         private readonly List<LevelRecord> records = new List<LevelRecord>(MaxLevelCount);
         private readonly Dictionary<int, LevelData> cache = new Dictionary<int, LevelData>(MaxLevelCount);
-        private bool loaded;
+        private bool isLoaded;
 
         public int LevelCount
         {
@@ -23,124 +23,74 @@ namespace SmashFast.Data
 
         public void EnsureLoaded()
         {
-            if (loaded)
-            {
-                return;
-            }
-
-            LoadFromResources();
+            if (!isLoaded)
+                LoadFromResources();
         }
 
         public void LoadFromResources()
         {
             TextAsset asset = Resources.Load<TextAsset>(ResourcesPath);
-            if (asset == null)
-            {
-                records.Clear();
-                loaded = true;
-                return;
-            }
-
-            LoadFromJson(asset.text);
+            LoadFromJson(asset != null ? asset.text : null);
         }
 
         public void LoadFromJson(string json)
         {
             records.Clear();
-            ClearCache();
+            cache.Clear();
+            isLoaded = true;
             if (string.IsNullOrEmpty(json))
-            {
-                loaded = true;
                 return;
-            }
 
             LevelCollectionData collection = JsonUtility.FromJson<LevelCollectionData>(json);
-            if (collection != null && collection.levels != null)
+            if (collection?.levels == null)
+                return;
+
+            foreach (LevelRecord record in collection.levels)
             {
-                int count = collection.levels.Count;
-                for (int i = 0; i < count; i++)
-                {
-                    LevelRecord record = collection.levels[i];
-                    if (record == null)
-                    {
-                        continue;
-                    }
+                if (record == null)
+                    continue;
 
-                    if (record.placements == null)
-                    {
-                        record.placements = new List<BlockPlacementData>(8);
-                    }
-
-                    records.Add(record);
-                }
+                record.placements ??= new List<BlockPlacementData>(8);
+                records.Add(record);
             }
-
-            loaded = true;
         }
 
         public string ToJson(bool prettyPrint)
         {
             EnsureLoaded();
-            LevelCollectionData collection = new LevelCollectionData();
-            collection.levels = records;
-            return JsonUtility.ToJson(collection, prettyPrint);
+            return JsonUtility.ToJson(new LevelCollectionData { levels = records }, prettyPrint);
         }
 
         public bool TryGetRecord(int levelIndex, out LevelRecord record)
         {
             EnsureLoaded();
-            record = null;
-            int count = records.Count;
-            for (int i = 0; i < count; i++)
-            {
-                if (records[i].levelIndex != levelIndex)
-                {
-                    continue;
-                }
-
-                record = records[i];
-                return true;
-            }
-
-            return false;
+            record = records.Find(candidate => candidate.levelIndex == levelIndex);
+            return record != null;
         }
 
-        public LevelData GetLevelDataForInfiniteIndex(int displayLevelNumber)
+        public LevelData GetLevelDataForInfiniteIndex(int levelNumber)
         {
             EnsureLoaded();
             if (records.Count == 0)
-            {
                 return null;
-            }
 
-            int safeNumber = displayLevelNumber < 1 ? 1 : displayLevelNumber;
-            int wrappedIndex = ((safeNumber - 1) % records.Count) + 1;
+            int wrappedIndex = (Mathf.Max(1, levelNumber) - 1) % records.Count + 1;
             return GetOrCreateLevelData(wrappedIndex);
         }
 
-        public int GetCycleIndex(int displayLevelNumber)
+        public int GetCycleIndex(int levelNumber)
         {
             int count = LevelCount;
-            if (count <= 0)
-            {
-                return 0;
-            }
-
-            int safeNumber = displayLevelNumber < 1 ? 1 : displayLevelNumber;
-            return (safeNumber - 1) / count;
+            return count > 0 ? (Mathf.Max(1, levelNumber) - 1) / count : 0;
         }
 
         public LevelData GetOrCreateLevelData(int levelIndex)
         {
             EnsureLoaded();
-            LevelData cached;
-            if (cache.TryGetValue(levelIndex, out cached) && cached != null)
-            {
+            if (cache.TryGetValue(levelIndex, out LevelData cached) && cached != null)
                 return cached;
-            }
 
-            LevelRecord record;
-            if (!TryGetRecord(levelIndex, out record))
+            if (!TryGetRecord(levelIndex, out LevelRecord record))
             {
                 record = CreateDefaultRecord(levelIndex);
                 UpsertRecord(record);
@@ -155,81 +105,58 @@ namespace SmashFast.Data
         public void UpsertRecord(LevelRecord record)
         {
             if (record == null)
-            {
                 return;
-            }
 
             EnsureLoaded();
-            int count = records.Count;
-            for (int i = 0; i < count; i++)
-            {
-                if (records[i].levelIndex != record.levelIndex)
-                {
-                    continue;
-                }
-
-                records[i] = record;
-                return;
-            }
-
-            records.Add(record);
+            int index = records.FindIndex(candidate => candidate.levelIndex == record.levelIndex);
+            if (index >= 0)
+                records[index] = record;
+            else
+                records.Add(record);
         }
 
-        public void ReplaceAll(List<LevelRecord> nextRecords)
+        public void ReplaceAll(List<LevelRecord> newRecords)
         {
             records.Clear();
-            ClearCache();
-            if (nextRecords != null)
+            cache.Clear();
+            isLoaded = true;
+            if (newRecords == null)
+                return;
+
+            foreach (LevelRecord record in newRecords)
             {
-                int count = nextRecords.Count;
-                for (int i = 0; i < count; i++)
-                {
-                    LevelRecord record = nextRecords[i];
-                    if (record == null)
-                    {
-                        continue;
-                    }
-
+                if (record != null)
                     records.Add(record);
-                }
             }
-
-            loaded = true;
         }
 
         public void CaptureLevel(LevelData level)
         {
             if (level == null)
-            {
                 return;
-            }
 
-            LevelRecord record = CreateRecordFromLevel(level);
-            UpsertRecord(record);
+            UpsertRecord(CreateRecordFromLevel(level));
             cache[level.LevelIndex] = level;
         }
 
         public LevelRecord CreateRecordFromLevel(LevelData level)
         {
-            LevelRecord record = new LevelRecord();
-            record.levelIndex = level.LevelIndex;
-            record.maxAmmo = level.MaxAmmo;
-            record.parAmmo = level.ParAmmo;
-            record.gridDimensions = level.GridDimensions;
-            record.cellSize = level.CellSize;
-            record.originOffset = level.OriginOffset;
-            record.fallEliminationY = level.FallEliminationY;
-            record.placements = new List<BlockPlacementData>(level.PlacementCount);
-            int count = level.PlacementCount;
-            for (int i = 0; i < count; i++)
+            LevelRecord record = new LevelRecord
             {
-                BlockPlacementData placement;
-                if (!level.TryGetPlacementByIndex(i, out placement))
-                {
-                    continue;
-                }
+                levelIndex = level.LevelIndex,
+                maxAmmo = level.MaxAmmo,
+                parAmmo = level.ParAmmo,
+                gridDimensions = level.GridDimensions,
+                cellSize = level.CellSize,
+                originOffset = level.OriginOffset,
+                fallEliminationY = level.FallEliminationY,
+                placements = new List<BlockPlacementData>(level.PlacementCount)
+            };
 
-                record.placements.Add(placement);
+            for (int i = 0; i < level.PlacementCount; i++)
+            {
+                if (level.TryGetPlacementByIndex(i, out BlockPlacementData placement))
+                    record.placements.Add(placement);
             }
 
             return record;
@@ -238,9 +165,7 @@ namespace SmashFast.Data
         public void ApplyRecordToLevel(LevelRecord record, LevelData level)
         {
             if (record == null || level == null)
-            {
                 return;
-            }
 
             level.LevelIndex = record.levelIndex;
             level.MaxAmmo = record.maxAmmo;
@@ -251,34 +176,25 @@ namespace SmashFast.Data
             level.FallEliminationY = record.fallEliminationY;
             level.ClearPlacements();
             if (record.placements == null)
-            {
                 return;
-            }
 
-            int count = record.placements.Count;
-            for (int i = 0; i < count; i++)
-            {
-                level.TryAddPlacement(record.placements[i]);
-            }
+            foreach (BlockPlacementData placement in record.placements)
+                level.TryAddPlacement(placement);
         }
 
         public LevelRecord CreateDefaultRecord(int levelIndex)
         {
-            LevelRecord record = new LevelRecord();
-            record.levelIndex = levelIndex < 1 ? 1 : levelIndex;
-            record.maxAmmo = 10;
-            record.parAmmo = 1;
-            record.gridDimensions = new Vector3Int(16, 14, 6);
-            record.cellSize = Vector3.one;
-            record.originOffset = Vector3.zero;
-            record.fallEliminationY = -1.5f;
-            record.placements = new List<BlockPlacementData>(8);
-            return record;
-        }
-
-        private void ClearCache()
-        {
-            cache.Clear();
+            return new LevelRecord
+            {
+                levelIndex = Mathf.Max(1, levelIndex),
+                maxAmmo = 10,
+                parAmmo = 1,
+                gridDimensions = new Vector3Int(16, 14, 6),
+                cellSize = Vector3.one,
+                originOffset = Vector3.zero,
+                fallEliminationY = -1.5f,
+                placements = new List<BlockPlacementData>(8)
+            };
         }
     }
 }

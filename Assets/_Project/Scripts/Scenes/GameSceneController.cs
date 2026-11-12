@@ -5,268 +5,175 @@ using SmashFast.Level;
 using SmashFast.Progress;
 using SmashFast.UI;
 using SmashFast.UI.Panels;
-using UnityEngine;
 using Zenject;
 
 namespace SmashFast.Scenes
 {
     public class GameSceneController : IGameSceneSession, IInitializable, IDisposable, ITickable
     {
-        private enum SessionPhase
+        private enum Phase
         {
-            Idle = 0,
-            Playing = 1,
-            Won = 2,
-            Lost = 3
+            Idle,
+            Playing,
+            Won,
+            Lost
         }
 
-        private readonly ILevelSpawner levelSpawner;
-        private readonly UIManager uiManager;
+        private readonly ILevelSpawner spawner;
+        private readonly UIManager ui;
         private readonly IPlayerProgressService progress;
         private readonly LevelDatabaseSO levelDatabase;
         private readonly GameSessionSlot sessionSlot;
-        private readonly CannonController cannonController;
-        private GameHudPanel hudPanel;
-        private SessionPhase phase;
-        private int destructiblesAtSpawn;
+        private readonly CannonController cannon;
+
+        private GameHudPanel hud;
+        private Phase phase;
+        private int targetsAtStart;
         private int shownAmmo = -1;
-        private int shownMax = -1;
+        private int shownMaxAmmo = -1;
 
         public GameSceneController(
-            ILevelSpawner levelSpawner,
-            UIManager uiManager,
+            ILevelSpawner spawner,
+            UIManager ui,
             IPlayerProgressService progress,
             LevelDatabaseSO levelDatabase,
             GameSessionSlot sessionSlot,
-            [InjectOptional] CannonController cannonController)
+            [InjectOptional] CannonController cannon)
         {
-            this.levelSpawner = levelSpawner;
-            this.uiManager = uiManager;
+            this.spawner = spawner;
+            this.ui = ui;
             this.progress = progress;
             this.levelDatabase = levelDatabase;
             this.sessionSlot = sessionSlot;
-            this.cannonController = cannonController;
+            this.cannon = cannon;
         }
 
-        public int LevelNumber
-        {
-            get
-            {
-                if (progress == null)
-                {
-                    return 1;
-                }
-
-                return progress.SelectedLevelNumber;
-            }
-        }
-
-        public int RemainingAmmo
-        {
-            get
-            {
-                if (cannonController == null)
-                {
-                    return 0;
-                }
-
-                return cannonController.RemainingAmmo;
-            }
-        }
-
-        public int MaxAmmo
-        {
-            get
-            {
-                if (cannonController == null)
-                {
-                    return 0;
-                }
-
-                return cannonController.MaxAmmo;
-            }
-        }
+        public int LevelNumber => progress.SelectedLevelNumber;
+        public int RemainingAmmo => cannon != null ? cannon.RemainingAmmo : 0;
+        public int MaxAmmo => cannon != null ? cannon.MaxAmmo : 0;
 
         public void Initialize()
         {
             sessionSlot.Register(this);
-            BeginLevel(LevelNumber);
+            StartLevel(LevelNumber);
         }
 
         public void Dispose()
         {
-            phase = SessionPhase.Idle;
-            if (cannonController != null)
-            {
-                cannonController.SetInputEnabled(false);
-            }
-
+            phase = Phase.Idle;
+            SetCannonInput(false);
             sessionSlot.Clear(this);
         }
 
         public void Tick()
         {
-            if (phase != SessionPhase.Playing || levelSpawner == null)
-            {
+            if (phase != Phase.Playing)
                 return;
-            }
 
             RefreshHud();
-            if (destructiblesAtSpawn > 0 && levelSpawner.ActiveDestructibleCount <= 0)
+
+            if (targetsAtStart > 0 && spawner.ActiveDestructibleCount <= 0)
             {
                 TriggerWin();
                 return;
             }
 
-            if (cannonController == null)
-            {
-                return;
-            }
-
-            if (cannonController.RemainingAmmo > 0 || cannonController.ActiveProjectileCount > 0)
-            {
-                return;
-            }
-
-            TriggerFail();
+            if (cannon != null && cannon.RemainingAmmo <= 0 && cannon.ActiveProjectileCount <= 0)
+                TriggerFail();
         }
 
-        public void RetryLevel()
-        {
-            BeginLevel(LevelNumber);
-        }
+        public void RetryLevel() => StartLevel(LevelNumber);
 
         public void LoadNextLevel()
         {
-            int nextNumber = LevelNumber + 1;
-            progress.UnlockThrough(nextNumber);
-            progress.SetSelectedLevel(nextNumber);
-            BeginLevel(nextNumber);
+            int nextLevel = LevelNumber + 1;
+            progress.UnlockThrough(nextLevel);
+            progress.SetSelectedLevel(nextLevel);
+            StartLevel(nextLevel);
         }
 
         public void SetGameplayInputEnabled(bool enabled)
         {
-            if (phase != SessionPhase.Playing || cannonController == null)
-            {
-                return;
-            }
-
-            cannonController.SetInputEnabled(enabled);
+            if (phase == Phase.Playing)
+                SetCannonInput(enabled);
         }
 
         public void TriggerWin()
         {
-            if (phase != SessionPhase.Playing)
-            {
+            if (phase != Phase.Playing)
                 return;
-            }
-
-            phase = SessionPhase.Won;
-            if (cannonController != null)
-            {
-                cannonController.SetInputEnabled(false);
-            }
 
             progress.UnlockThrough(LevelNumber + 1);
-            if (uiManager == null)
-            {
-                return;
-            }
-
-            uiManager.HidePopup<SettingsPopup>();
-            uiManager.ShowPanel<SuccessPanel>();
+            EndLevel(Phase.Won);
+            ui.ShowPanel<SuccessPanel>();
         }
 
         public void TriggerFail()
         {
-            if (phase != SessionPhase.Playing)
-            {
+            if (phase != Phase.Playing)
                 return;
-            }
 
-            phase = SessionPhase.Lost;
-            if (cannonController != null)
-            {
-                cannonController.SetInputEnabled(false);
-            }
-
-            if (uiManager == null)
-            {
-                return;
-            }
-
-            uiManager.HidePopup<SettingsPopup>();
-            uiManager.ShowPanel<FailPanel>();
+            EndLevel(Phase.Lost);
+            ui.ShowPanel<FailPanel>();
         }
 
-        private void BeginLevel(int levelNumber)
+        private void EndLevel(Phase result)
         {
-            if (levelDatabase == null || levelSpawner == null || progress == null)
-            {
-                return;
-            }
+            phase = result;
+            SetCannonInput(false);
+            ui.HidePopup<SettingsPopup>();
+        }
 
-            LevelData levelData = levelDatabase.GetLevelDataForInfiniteIndex(levelNumber);
+        private void StartLevel(int level)
+        {
+            LevelData levelData = levelDatabase.GetLevelDataForInfiniteIndex(level);
             if (levelData == null)
-            {
                 return;
+
+            phase = Phase.Idle;
+            SetCannonInput(false);
+
+            spawner.SpawnLevel(levelData, level);
+            targetsAtStart = spawner.ActiveDestructibleCount;
+
+            int ammo = spawner.ResolvedMaxAmmo;
+            if (cannon != null)
+            {
+                cannon.LoadAmmo(ammo);
+                ammo = cannon.RemainingAmmo;
             }
 
-            phase = SessionPhase.Idle;
-            if (cannonController != null)
+            shownAmmo = ammo;
+            shownMaxAmmo = ammo;
+
+            hud = ui.ShowPanel<GameHudPanel>();
+            if (hud != null)
             {
-                cannonController.SetInputEnabled(false);
+                hud.SetLevelNumber(level);
+                hud.SetAmmo(shownAmmo, shownMaxAmmo);
             }
 
-            levelSpawner.SpawnLevel(levelData, levelNumber);
-            int ammo = levelSpawner.ResolvedMaxAmmo;
-            if (cannonController != null)
-            {
-                cannonController.LoadAmmo(ammo);
-                shownAmmo = cannonController.RemainingAmmo;
-                shownMax = cannonController.MaxAmmo;
-            }
-            else
-            {
-                shownAmmo = ammo;
-                shownMax = ammo;
-            }
-
-            destructiblesAtSpawn = levelSpawner.ActiveDestructibleCount;
-            if (uiManager != null)
-            {
-                hudPanel = uiManager.ShowPanel<GameHudPanel>();
-                if (hudPanel != null)
-                {
-                    hudPanel.SetLevelNumber(levelNumber);
-                    hudPanel.SetAmmo(shownAmmo, shownMax);
-                }
-            }
-
-            phase = SessionPhase.Playing;
-            if (cannonController != null)
-            {
-                cannonController.SetInputEnabled(true);
-            }
+            phase = Phase.Playing;
+            SetCannonInput(true);
         }
 
         private void RefreshHud()
         {
-            if (cannonController == null || hudPanel == null)
-            {
+            if (cannon == null || hud == null)
                 return;
-            }
 
-            int ammo = cannonController.RemainingAmmo;
-            int max = cannonController.MaxAmmo;
-            if (ammo == shownAmmo && max == shownMax)
-            {
+            if (cannon.RemainingAmmo == shownAmmo && cannon.MaxAmmo == shownMaxAmmo)
                 return;
-            }
 
-            shownAmmo = ammo;
-            shownMax = max;
-            hudPanel.SetAmmo(ammo, max);
+            shownAmmo = cannon.RemainingAmmo;
+            shownMaxAmmo = cannon.MaxAmmo;
+            hud.SetAmmo(shownAmmo, shownMaxAmmo);
+        }
+
+        private void SetCannonInput(bool enabled)
+        {
+            if (cannon != null)
+                cannon.SetInputEnabled(enabled);
         }
     }
 }

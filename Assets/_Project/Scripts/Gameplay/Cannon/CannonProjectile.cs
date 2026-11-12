@@ -1,5 +1,3 @@
-using System;
-using System.Threading;
 using Cysharp.Threading.Tasks;
 using SmashFast.Core.Effects;
 using SmashFast.Core.Pooling;
@@ -20,93 +18,68 @@ namespace SmashFast.Gameplay.Cannon
         [SerializeField, Min(0.05f)] private float fadeSeconds = 0.6f;
 
         private Rigidbody body;
-        private ShrinkFadeEffect fadeEffect;
-        private IUniversalObjectPool objectPool;
-        private IProjectileLifecycle projectileLifecycle;
-        private CancellationTokenSource destroySource;
-        private int lifeId;
-        private bool isReturning;
-        private bool hasBody;
-        private bool hasHit;
+        private ShrinkFadeEffect fade;
+        private IUniversalObjectPool pool;
+        private IProjectileLifecycle owner;
         private float releaseTime;
+        private bool isFlying;
+        private bool hasHit;
+        private int lifeId;
 
         private void Awake()
         {
-            body = GetComponent<Rigidbody>();
-            if (body == null)
-            {
+            if (!TryGetComponent(out body))
                 body = gameObject.AddComponent<Rigidbody>();
-            }
 
-            fadeEffect = new ShrinkFadeEffect(new Transform[] { transform }, GetComponentsInChildren<Renderer>(true));
-            hasBody = true;
             body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.useGravity = false;
-            destroySource = new CancellationTokenSource();
-        }
 
-        private void OnDestroy()
-        {
-            if (destroySource == null)
-            {
-                return;
-            }
-
-            destroySource.Cancel();
-            destroySource.Dispose();
-            destroySource = null;
+            fade = new ShrinkFadeEffect(new[] { transform }, GetComponentsInChildren<Renderer>(true));
         }
 
         public void AssignDependencies(IUniversalObjectPool pool, FadeMaterialLibrary fadeLibrary)
         {
-            objectPool = pool;
-            fadeEffect.Prepare(fadeLibrary);
+            this.pool = pool;
+            fade.Prepare(fadeLibrary);
         }
 
-        public bool Launch(Vector3 direction, float speed, float mass, IProjectileLifecycle lifecycle)
+        public void Launch(Vector3 direction, float speed, float mass, IProjectileLifecycle owner)
         {
-            if (!hasBody)
-            {
-                return false;
-            }
-
-            Vector3 launchDirection = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector3.forward;
-            float launchSpeed = speed > 0f ? speed : 0f;
-            float launchMass = mass > 0f ? mass : 1f;
             body.isKinematic = false;
             body.useGravity = false;
-            body.mass = launchMass;
-            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-            body.linearVelocity = launchDirection * launchSpeed;
+            body.mass = mass > 0f ? mass : 1f;
+            body.linearVelocity = direction.normalized * Mathf.Max(0f, speed);
             body.angularVelocity = Vector3.zero;
             body.WakeUp();
-            isReturning = false;
-            hasHit = false;
-            releaseTime = Time.time + lifetimeSeconds;
-            projectileLifecycle = lifecycle;
-            lifeId++;
-            if (destroySource == null)
-            {
-                return true;
-            }
 
-            WatchLifetime(lifeId, destroySource.Token).Forget();
-            return true;
+            this.owner = owner;
+            releaseTime = Time.time + lifetimeSeconds;
+            hasHit = false;
+            isFlying = true;
+            lifeId++;
+        }
+
+        private void Update()
+        {
+            if (!isFlying)
+                return;
+
+            if (Time.time < releaseTime && transform.position.y >= despawnBelowY)
+                return;
+
+            isFlying = false;
+            FadeOutAndDespawn(lifeId).Forget();
         }
 
         private void OnCollisionEnter(Collision collision)
         {
-            if (!hasBody || body == null || body.isKinematic)
-            {
+            if (body.isKinematic)
                 return;
-            }
 
             body.useGravity = true;
             if (hasHit)
-            {
                 return;
-            }
 
             hasHit = true;
             releaseTime = Mathf.Min(releaseTime, Time.time + postHitHoldSeconds);
@@ -114,90 +87,33 @@ namespace SmashFast.Gameplay.Cannon
 
         public void OnSpawned()
         {
-            lifeId++;
-            isReturning = false;
-            projectileLifecycle = null;
-            RestoreAfterFade();
-            ResetMotion();
+            ResetState();
+            owner = null;
         }
 
         public void OnDespawned()
         {
+            ResetState();
+            IProjectileLifecycle releasedOwner = owner;
+            owner = null;
+            releasedOwner?.OnProjectileReleased();
+        }
+
+        private async UniTaskVoid FadeOutAndDespawn(int id)
+        {
+            bool canceled = await fade.PlayAsync(fadeSeconds, this.GetCancellationTokenOnDestroy());
+            if (!canceled && id == lifeId)
+                pool.Despawn(gameObject);
+        }
+
+        private void ResetState()
+        {
             lifeId++;
-            isReturning = false;
-            IProjectileLifecycle lifecycle = projectileLifecycle;
-            projectileLifecycle = null;
-            RestoreAfterFade();
-            ResetMotion();
-            if (lifecycle != null)
-            {
-                lifecycle.OnProjectileReleased();
-            }
-        }
+            isFlying = false;
+            fade.Restore();
 
-        private async UniTaskVoid WatchLifetime(int id, CancellationToken token)
-        {
-            try
-            {
-                while (Time.time < releaseTime)
-                {
-                    await UniTask.Delay(50, cancellationToken: token);
-                    if (id != lifeId)
-                    {
-                        return;
-                    }
-
-                    if (transform.position.y < despawnBelowY)
-                    {
-                        break;
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
+            if (body.isKinematic)
                 return;
-            }
-
-            if (id != lifeId)
-            {
-                return;
-            }
-
-            bool canceled = await fadeEffect.PlayAsync(fadeSeconds, token);
-            if (canceled || id != lifeId)
-            {
-                return;
-            }
-
-            RequestDespawn();
-        }
-
-        private void RestoreAfterFade()
-        {
-            if (!hasBody)
-            {
-                return;
-            }
-
-            fadeEffect.Restore();
-        }
-        private void RequestDespawn()
-        {
-            if (isReturning || objectPool == null)
-            {
-                return;
-            }
-
-            isReturning = true;
-            objectPool.Despawn(gameObject);
-        }
-
-        private void ResetMotion()
-        {
-            if (!hasBody || body == null || body.isKinematic)
-            {
-                return;
-            }
 
             body.linearVelocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;

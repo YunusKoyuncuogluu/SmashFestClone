@@ -19,265 +19,175 @@ namespace SmashFast.UI.Panels
         [SerializeField, Min(8)] private int extraLockedLevels = 24;
         [SerializeField, Min(8)] private int minimumListedLevels = 48;
 
-        private UIManager uiManager;
+        private UIManager ui;
         private ISceneFlowManager sceneFlow;
         private IPlayerProgressService progress;
         private LevelItemButton[] items;
         private int listCount;
-        private int firstVisibleIndex = -1;
-        private bool listReady;
-        private bool isPlayBusy;
+        private int firstVisible = -1;
+        private bool isListReady;
+        private bool isStarting;
 
         [Inject]
-        public void Construct(UIManager uiManager, ISceneFlowManager sceneFlow, IPlayerProgressService progress)
+        public void Construct(UIManager ui, ISceneFlowManager sceneFlow, IPlayerProgressService progress)
         {
-            this.uiManager = uiManager;
+            this.ui = ui;
             this.sceneFlow = sceneFlow;
             this.progress = progress;
-        }
-
-        public void SelectLevel(int levelNumber)
-        {
-            if (progress == null || !progress.IsLevelUnlocked(levelNumber))
-            {
-                return;
-            }
-
-            progress.SetSelectedLevel(levelNumber);
-            firstVisibleIndex = -1;
-            RefreshVisibleItems(false);
-        }
-
-        protected override void OnPanelOpened()
-        {
-            isPlayBusy = false;
-            RebuildLevelList();
         }
 
         private void Awake()
         {
             if (playButton != null)
-            {
-                playButton.onClick.AddListener(HandlePlay);
-            }
+                playButton.onClick.AddListener(() => StartGame().Forget());
 
             if (settingsButton != null)
-            {
-                settingsButton.onClick.AddListener(HandleSettings);
-            }
+                settingsButton.onClick.AddListener(OpenSettings);
         }
 
-        private void HandlePlay()
+        public void SelectLevel(int level)
         {
-            if (isPlayBusy || sceneFlow == null || progress == null)
-            {
+            if (!progress.IsLevelUnlocked(level))
                 return;
-            }
 
-            if (!progress.IsLevelUnlocked(progress.SelectedLevelNumber))
-            {
-                return;
-            }
-
-            isPlayBusy = true;
-            StartGameAsync().Forget();
+            progress.SetSelectedLevel(level);
+            firstVisible = -1;
+            RefreshItems(false);
         }
 
-        private void HandleSettings()
+        protected override void OnPanelOpened()
         {
-            if (uiManager == null)
-            {
-                return;
-            }
-
-            uiManager.ShowPopup<SettingsPopup>();
+            isStarting = false;
+            RebuildList();
         }
 
-        private async UniTaskVoid StartGameAsync()
+        private async UniTaskVoid StartGame()
         {
+            if (isStarting || !progress.IsLevelUnlocked(progress.SelectedLevelNumber))
+                return;
+
+            isStarting = true;
             await sceneFlow.LoadGameSceneAsync(progress.SelectedLevelNumber);
-            isPlayBusy = false;
+            isStarting = false;
         }
 
-        private void RebuildLevelList()
+        private void OpenSettings() => ui.ShowPopup<SettingsPopup>();
+
+        private void RebuildList()
         {
-            if (progress == null)
-            {
+            CreateItems();
+            if (!isListReady)
                 return;
-            }
 
-            EnsureList();
-            if (!listReady)
-            {
-                return;
-            }
-
-            int desired = progress.HighestUnlockedLevel + extraLockedLevels;
-            if (desired < minimumListedLevels)
-            {
-                desired = minimumListedLevels;
-            }
-
-            listCount = desired;
-            ApplyContentHeight();
+            listCount = Mathf.Max(minimumListedLevels, progress.HighestUnlockedLevel + extraLockedLevels);
+            UpdateContentHeight();
             ScrollToSelected();
-            firstVisibleIndex = -1;
-            RefreshVisibleItems(false);
+            firstVisible = -1;
+            RefreshItems(false);
         }
 
-        private void EnsureList()
+        private void CreateItems()
         {
-            if (listReady)
-            {
+            if (isListReady || levelItemPrefab == null || levelContent == null || levelScroll == null)
                 return;
-            }
 
-            if (levelItemPrefab == null || levelContent == null || levelScroll == null)
-            {
-                return;
-            }
-
-            if (itemHeight < 24f)
-            {
-                itemHeight = 24f;
-            }
-
-            DisableContentDrivers();
+            itemHeight = Mathf.Max(24f, itemHeight);
+            DisableLayoutDrivers();
             levelContent.anchorMin = new Vector2(0f, 1f);
             levelContent.anchorMax = new Vector2(1f, 1f);
             levelContent.pivot = new Vector2(0.5f, 1f);
-            int count = poolSize < 4 ? 4 : poolSize;
-            items = new LevelItemButton[count];
-            for (int i = 0; i < count; i++)
+
+            items = new LevelItemButton[Mathf.Max(4, poolSize)];
+            for (int i = 0; i < items.Length; i++)
             {
                 LevelItemButton item = Instantiate(levelItemPrefab, levelContent);
-                PrepareItem(item);
+                SetupItem(item);
                 items[i] = item;
             }
 
             levelScroll.vertical = true;
             levelScroll.horizontal = false;
-            levelScroll.onValueChanged.AddListener(HandleScroll);
-            listReady = true;
+            levelScroll.onValueChanged.AddListener(OnScroll);
+            isListReady = true;
         }
 
-        private void DisableContentDrivers()
+        private void DisableLayoutDrivers()
         {
-            LayoutGroup layoutGroup = levelContent.GetComponent<LayoutGroup>();
-            if (layoutGroup != null)
-            {
+            if (levelContent.TryGetComponent(out LayoutGroup layoutGroup))
                 layoutGroup.enabled = false;
-            }
 
-            ContentSizeFitter fitter = levelContent.GetComponent<ContentSizeFitter>();
-            if (fitter != null)
-            {
+            if (levelContent.TryGetComponent(out ContentSizeFitter fitter))
                 fitter.enabled = false;
-            }
         }
 
-        private void PrepareItem(LevelItemButton item)
+        private void SetupItem(LevelItemButton item)
         {
             item.Configure(this);
-            RectTransform rect = item.RectTransform;
+            RectTransform rect = item.Rect;
             rect.anchorMin = new Vector2(0f, 1f);
             rect.anchorMax = new Vector2(1f, 1f);
             rect.pivot = new Vector2(0.5f, 1f);
             rect.sizeDelta = new Vector2(0f, itemHeight);
         }
 
-        private void HandleScroll(Vector2 normalizedPosition)
+        private void OnScroll(Vector2 normalizedPosition)
         {
-            bool atTop = normalizedPosition.y <= 0f && levelContent.anchoredPosition.y <= 0f;
-            RefreshVisibleItems(atTop);
+            bool isAtTop = normalizedPosition.y <= 0f && levelContent.anchoredPosition.y <= 0f;
+            RefreshItems(isAtTop);
         }
 
-        private void RefreshVisibleItems(bool resetWindow)
+        private void RefreshItems(bool forceRebind)
         {
-            if (!listReady)
-            {
+            if (!isListReady)
                 return;
-            }
 
-            if (resetWindow)
-            {
-                firstVisibleIndex = -1;
-            }
+            if (forceRebind)
+                firstVisible = -1;
 
             bool grew = GrowIfNeeded();
-            int start = CalculateStartIndex();
-            if (!grew && start == firstVisibleIndex)
-            {
+            int start = GetFirstVisibleIndex();
+            if (!grew && start == firstVisible)
                 return;
-            }
 
-            firstVisibleIndex = start;
-            int count = items.Length;
-            for (int i = 0; i < count; i++)
-            {
+            firstVisible = start;
+            for (int i = 0; i < items.Length; i++)
                 BindItem(items[i], start + i);
-            }
         }
 
         private bool GrowIfNeeded()
         {
-            int start = CalculateStartIndex();
-            int lastCovered = start + items.Length;
+            int lastCovered = GetFirstVisibleIndex() + items.Length;
             if (lastCovered < listCount - 1)
-            {
                 return false;
-            }
 
-            int step = extraLockedLevels < 8 ? 8 : extraLockedLevels;
-            listCount += step;
-            ApplyContentHeight();
+            listCount += Mathf.Max(8, extraLockedLevels);
+            UpdateContentHeight();
             return true;
         }
 
-        private int CalculateStartIndex()
+        private int GetFirstVisibleIndex()
         {
-            float scrollY = levelContent.anchoredPosition.y;
-            if (scrollY < 0f)
-            {
-                scrollY = 0f;
-            }
-
-            int start = (int)(scrollY / itemHeight);
-            int maxStart = listCount - items.Length;
-            if (maxStart < 0)
-            {
-                maxStart = 0;
-            }
-
-            if (start < 0)
-            {
-                start = 0;
-            }
-
-            if (start > maxStart)
-            {
-                start = maxStart;
-            }
-
-            return start;
+            float scrollY = Mathf.Max(0f, levelContent.anchoredPosition.y);
+            int maxStart = Mathf.Max(0, listCount - items.Length);
+            return Mathf.Clamp((int)(scrollY / itemHeight), 0, maxStart);
         }
 
-        private void BindItem(LevelItemButton item, int zeroBasedIndex)
+        private void BindItem(LevelItemButton item, int index)
         {
-            if (zeroBasedIndex < 0 || zeroBasedIndex >= listCount)
+            if (index < 0 || index >= listCount)
             {
                 item.gameObject.SetActive(false);
                 return;
             }
 
             item.gameObject.SetActive(true);
-            RectTransform rect = item.RectTransform;
-            rect.anchoredPosition = new Vector2(0f, -zeroBasedIndex * itemHeight);
-            int levelNumber = zeroBasedIndex + 1;
-            item.Apply(levelNumber, progress.IsLevelUnlocked(levelNumber), levelNumber == progress.SelectedLevelNumber);
+            item.Rect.anchoredPosition = new Vector2(0f, -index * itemHeight);
+
+            int level = index + 1;
+            item.Apply(level, progress.IsLevelUnlocked(level), level == progress.SelectedLevelNumber);
         }
 
-        private void ApplyContentHeight()
+        private void UpdateContentHeight()
         {
             Vector2 size = levelContent.sizeDelta;
             size.y = listCount * itemHeight;
@@ -286,28 +196,9 @@ namespace SmashFast.UI.Panels
 
         private void ScrollToSelected()
         {
-            float targetY = (progress.SelectedLevelNumber - 1) * itemHeight;
-            float viewportHeight = 0f;
-            if (levelScroll.viewport != null)
-            {
-                viewportHeight = levelScroll.viewport.rect.height;
-            }
-
-            float maxY = levelContent.sizeDelta.y - viewportHeight;
-            if (maxY < 0f)
-            {
-                maxY = 0f;
-            }
-
-            if (targetY < 0f)
-            {
-                targetY = 0f;
-            }
-
-            if (targetY > maxY)
-            {
-                targetY = maxY;
-            }
+            float viewportHeight = levelScroll.viewport != null ? levelScroll.viewport.rect.height : 0f;
+            float maxY = Mathf.Max(0f, levelContent.sizeDelta.y - viewportHeight);
+            float targetY = Mathf.Clamp((progress.SelectedLevelNumber - 1) * itemHeight, 0f, maxY);
 
             Vector2 position = levelContent.anchoredPosition;
             position.y = targetY;

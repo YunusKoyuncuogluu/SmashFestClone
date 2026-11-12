@@ -1,25 +1,19 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace SmashFast.Data
 {
-    [CreateAssetMenu(fileName = "LevelData", menuName = "SmashFast/Level Data", order = 0)]
-    public class LevelData : ScriptableObject
+    [Serializable]
+    public class LevelData
     {
-        [Header("Identity")]
-        [SerializeField, Min(0)] private int levelIndex;
-        [SerializeField, Min(0)] private int maxAmmo = 10;
-
-        [Header("Grid")]
-        [SerializeField] private Vector3Int gridDimensions = new Vector3Int(9, 12, 5);
+        [SerializeField] private int levelIndex;
+        [SerializeField] private int maxAmmo = 10;
+        [SerializeField] private Vector3Int gridDimensions = new Vector3Int(16, 14, 6);
         [SerializeField] private Vector3 cellSize = Vector3.one;
         [SerializeField] private Vector3 originOffset = Vector3.zero;
-
-        [Header("Rules")]
         [SerializeField] private float fallEliminationY = -1.5f;
-        [SerializeField, Min(0)] private int parAmmo;
-
-        [Header("Placements")]
+        [SerializeField] private int parAmmo;
         [SerializeField] private List<BlockPlacementData> placements = new List<BlockPlacementData>(64);
 
         [System.NonSerialized] private BlockFootprint blockFootprint;
@@ -151,50 +145,6 @@ namespace SmashFast.Data
                 }
 
                 return placements;
-            }
-        }
-
-        private void OnEnable()
-        {
-            if (placements == null)
-            {
-                placements = new List<BlockPlacementData>(64);
-            }
-        }
-
-        private void OnValidate()
-        {
-            Vector3Int clampedDimensions = new Vector3Int(
-                Mathf.Max(1, gridDimensions.x),
-                Mathf.Max(1, gridDimensions.y),
-                Mathf.Max(1, gridDimensions.z));
-            if (gridDimensions != clampedDimensions)
-            {
-                gridDimensions = clampedDimensions;
-            }
-
-            Vector3 clampedCell = new Vector3(
-                Mathf.Max(0.01f, cellSize.x),
-                Mathf.Max(0.01f, cellSize.y),
-                Mathf.Max(0.01f, cellSize.z));
-            if (cellSize != clampedCell)
-            {
-                cellSize = clampedCell;
-            }
-
-            if (maxAmmo < 0)
-            {
-                maxAmmo = 0;
-            }
-
-            if (levelIndex < 0)
-            {
-                levelIndex = 0;
-            }
-
-            if (parAmmo < 0)
-            {
-                parAmmo = 0;
             }
         }
 
@@ -429,15 +379,32 @@ namespace SmashFast.Data
             return removed;
         }
 
-        public Vector3Int GetEffectiveSize(in BlockPlacementData placement, BlockCatalogSO catalog)
+        public static bool HasCustomSize(in BlockPlacementData placement)
         {
-            Vector3Int sizeInCells = Vector3Int.one;
+            return placement.customSize.x > 0
+                && placement.customSize.y > 0
+                && placement.customSize.z > 0;
+        }
+
+        public Vector3Int GetSizeInCells(in BlockPlacementData placement, BlockCatalogSO catalog)
+        {
+            if (HasCustomSize(placement))
+            {
+                return Footprint.ClampSize(placement.customSize);
+            }
+
             BlockDefinition definition;
             if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition))
             {
-                sizeInCells = definition.sizeInCells;
+                return Footprint.ClampSize(definition.sizeInCells);
             }
 
+            return Vector3Int.one;
+        }
+
+        public Vector3Int GetEffectiveSize(in BlockPlacementData placement, BlockCatalogSO catalog)
+        {
+            Vector3Int sizeInCells = GetSizeInCells(placement, catalog);
             return Footprint.GetEffectiveSize(sizeInCells, placement.rotationEuler);
         }
 
@@ -597,22 +564,38 @@ namespace SmashFast.Data
             GetOccupiedGridBounds(catalog, out minGrid, out maxGrid);
             float occupiedCenterX = (minGrid.x + maxGrid.x) * 0.5f;
             float occupiedCenterZ = (minGrid.z + maxGrid.z) * 0.5f;
-            Vector3 cell = CellSize;
+            Vector3 cell = GetScaledCellSize(catalog);
             return new Vector3(-(occupiedCenterX + 0.5f) * cell.x, 0f, -(occupiedCenterZ + 0.5f) * cell.z);
         }
 
-        public Vector3 GetFootprintWorldCenter(Vector3Int anchor, Vector3Int effectiveSize)
+        public Vector3 GetScaledCellSize(BlockCatalogSO catalog)
+        {
+            float scale = catalog != null ? catalog.GetScale() : 1f;
+            return CellSize * scale;
+        }
+
+        public float GetTableLift(BlockCatalogSO catalog)
+        {
+            if (catalog == null)
+            {
+                return 0f;
+            }
+
+            float cellHeight = GetScaledCellSize(catalog).y;
+            return (catalog.GetTableHeightFactor(CellSize.y) - 1f) * cellHeight;
+        }
+
+        public Vector3 GetFootprintWorldCenter(Vector3Int anchor, Vector3Int effectiveSize, BlockCatalogSO catalog, bool isFoundationTable)
         {
             Vector3Int size = Footprint.ClampSize(effectiveSize);
-            Vector3 cell = CellSize;
-            Vector3 centerGridOffset = new Vector3(
-                anchor.x + ((size.x - 1) * 0.5f),
-                anchor.y + ((size.y - 1) * 0.5f),
-                anchor.z + ((size.z - 1) * 0.5f));
+            Vector3 cell = GetScaledCellSize(catalog);
+            float lift = GetTableLift(catalog);
+            float bottomY = isFoundationTable ? 0f : (anchor.y * cell.y) + (anchor.y > 0 ? lift : 0f);
+            float heightY = (size.y * cell.y) + (isFoundationTable ? lift : 0f);
             return OriginOffset + new Vector3(
-                (centerGridOffset.x + 0.5f) * cell.x,
-                (centerGridOffset.y + 0.5f) * cell.y,
-                (centerGridOffset.z + 0.5f) * cell.z);
+                (anchor.x + ((size.x - 1) * 0.5f) + 0.5f) * cell.x,
+                bottomY + (heightY * 0.5f),
+                (anchor.z + ((size.z - 1) * 0.5f) + 0.5f) * cell.z);
         }
 
         public Vector3 GetCellWorldScale(Vector3 baseScale)
@@ -633,13 +616,22 @@ namespace SmashFast.Data
             return new Vector3(cellScale.x * localSize.x, cellScale.y * localSize.y, cellScale.z * localSize.z);
         }
 
+        public Vector3 GetFootprintWorldScale(Vector3 baseScale, Vector3Int sizeInCells, BlockCatalogSO catalog)
+        {
+            float scale = catalog != null ? catalog.GetScale() : 1f;
+            return GetFootprintWorldScale(baseScale, sizeInCells) * scale;
+        }
+
         public Matrix4x4 GetWorldMatrix(in BlockPlacementData placement, Vector3 baseScale, Vector3Int sizeInCells, BlockCatalogSO catalog)
         {
-            Vector3Int effectiveSize = Footprint.GetEffectiveSize(sizeInCells, placement.rotationEuler);
+            Vector3Int logicalSize = HasCustomSize(placement)
+                ? Footprint.ClampSize(placement.customSize)
+                : Footprint.ClampSize(sizeInCells);
+            Vector3Int effectiveSize = Footprint.GetEffectiveSize(logicalSize, placement.rotationEuler);
             Vector3 worldPos;
             Quaternion worldRot;
             GetWorldPose(placement, effectiveSize, catalog, 0f, out worldPos, out worldRot);
-            Vector3 scale = GetFootprintWorldScale(baseScale, sizeInCells);
+            Vector3 scale = GetFootprintWorldScale(baseScale, effectiveSize, catalog);
             return Matrix4x4.TRS(worldPos, worldRot, scale);
         }
 
@@ -652,7 +644,7 @@ namespace SmashFast.Data
             out Quaternion worldRot)
         {
             Vector3Int size = Footprint.ClampSize(effectiveSize);
-            Vector3 unrotatedCenter = GetFootprintWorldCenter(placement.gridPosition, size);
+            Vector3 unrotatedCenter = GetFootprintWorldCenter(placement.gridPosition, size, catalog, IsFoundationTable(placement, catalog));
             Vector3 centerShift = GetHorizontalCenterShift(catalog);
             Vector3 tableCenterPos;
             float tableYaw;
@@ -665,17 +657,10 @@ namespace SmashFast.Data
                 return;
             }
 
-            if (IsFoundationTable(placement, catalog))
-            {
-                worldPos = unrotatedCenter + centerShift;
-                Vector3 euler = placement.rotationEuler;
-                euler.y += extraYawOffset;
-                worldRot = Quaternion.Euler(euler);
-                return;
-            }
-
             worldPos = unrotatedCenter + centerShift;
-            worldRot = Quaternion.Euler(placement.rotationEuler);
+            Vector3 euler = placement.rotationEuler;
+            euler.y += extraYawOffset;
+            worldRot = Quaternion.Euler(euler);
         }
 
         public bool IsFoundationTable(in BlockPlacementData placement, BlockCatalogSO catalog)
@@ -763,8 +748,8 @@ namespace SmashFast.Data
         public Bounds GetWorldBounds(BlockCatalogSO catalog)
         {
             Vector3Int dimensions = GridDimensions;
-            Vector3 cell = CellSize;
-            Vector3 size = new Vector3(dimensions.x * cell.x, dimensions.y * cell.y, dimensions.z * cell.z);
+            Vector3 cell = GetScaledCellSize(catalog);
+            Vector3 size = new Vector3(dimensions.x * cell.x, (dimensions.y * cell.y) + GetTableLift(catalog), dimensions.z * cell.z);
             Vector3 boundsCenter = OriginOffset + (size * 0.5f) + GetHorizontalCenterShift(catalog);
             Bounds bounds = new Bounds(boundsCenter, size);
             int count = PlacementCount;
@@ -780,7 +765,7 @@ namespace SmashFast.Data
                 Vector3 worldPos;
                 Quaternion worldRot;
                 GetWorldPose(placement, footprint, catalog, 0f, out worldPos, out worldRot);
-                Vector3 extent = GetFootprintWorldScale(Vector3.one, footprint) * 0.5f;
+                Vector3 extent = GetFootprintWorldScale(Vector3.one, footprint, catalog) * 0.5f;
                 float reach = extent.magnitude;
                 bounds.Encapsulate(worldPos + new Vector3(reach, reach, reach));
                 bounds.Encapsulate(worldPos - new Vector3(reach, reach, reach));
@@ -821,7 +806,7 @@ namespace SmashFast.Data
                     continue;
                 }
 
-                tableCenterPos = GetFootprintWorldCenter(candidate.gridPosition, tableSize);
+                tableCenterPos = GetFootprintWorldCenter(candidate.gridPosition, tableSize, catalog, true);
                 tableYaw = candidate.rotationEuler.y;
                 return true;
             }

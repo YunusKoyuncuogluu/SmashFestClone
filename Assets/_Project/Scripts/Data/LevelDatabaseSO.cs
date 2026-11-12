@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace SmashFast.Data
@@ -7,7 +6,10 @@ namespace SmashFast.Data
     public class LevelDatabaseSO : ScriptableObject
     {
         [SerializeField] private BlockCatalogSO blockCatalog;
-        [SerializeField] private List<LevelData> levels = new List<LevelData>(16);
+        [SerializeField] private TextAsset levelsJson;
+
+        private readonly JsonLevelRepository repository = new JsonLevelRepository();
+        private bool repositoryReady;
 
         public BlockCatalogSO BlockCatalog
         {
@@ -17,65 +19,88 @@ namespace SmashFast.Data
             }
         }
 
+        public TextAsset LevelsJson
+        {
+            get
+            {
+                return levelsJson;
+            }
+            set
+            {
+                levelsJson = value;
+                repositoryReady = false;
+            }
+        }
+
+        public JsonLevelRepository Repository
+        {
+            get
+            {
+                EnsureRepository();
+                return repository;
+            }
+        }
+
         public int LevelCount
         {
             get
             {
-                if (levels == null)
-                {
-                    return 0;
-                }
-
-                return levels.Count;
+                EnsureRepository();
+                return repository.LevelCount;
             }
         }
 
         public LevelData GetLevelDataForInfiniteIndex(int displayLevelNumber)
         {
-            if (levels == null || levels.Count == 0)
-            {
-                return null;
-            }
-
-            int safeNumber = displayLevelNumber < 1 ? 1 : displayLevelNumber;
-            int count = levels.Count;
-            int startIndex = (safeNumber - 1) % count;
-            for (int offset = 0; offset < count; offset++)
-            {
-                int index = startIndex + offset;
-                if (index >= count)
-                {
-                    index -= count;
-                }
-
-                LevelData levelData = levels[index];
-                if (levelData != null)
-                {
-                    return levelData;
-                }
-            }
-
-            return null;
+            EnsureRepository();
+            return repository.GetLevelDataForInfiniteIndex(displayLevelNumber);
         }
 
         public int GetCycleIndex(int displayLevelNumber)
         {
-            int count = LevelCount;
-            if (count <= 0)
-            {
-                return 0;
-            }
+            EnsureRepository();
+            return repository.GetCycleIndex(displayLevelNumber);
+        }
 
-            int safeNumber = displayLevelNumber < 1 ? 1 : displayLevelNumber;
-            return (safeNumber - 1) / count;
+        public LevelData GetLevelByIndex(int levelIndex)
+        {
+            EnsureRepository();
+            return repository.GetOrCreateLevelData(levelIndex);
         }
 
         private void OnEnable()
         {
-            if (levels == null)
+            repositoryReady = false;
+        }
+
+        public void Invalidate()
+        {
+            repositoryReady = false;
+        }
+
+        public void ReloadFromText(string json)
+        {
+            repository.LoadFromJson(json);
+            repositoryReady = true;
+        }
+
+        private void EnsureRepository()
+        {
+            if (repositoryReady)
             {
-                levels = new List<LevelData>(16);
+                return;
             }
+
+            if (levelsJson != null && !string.IsNullOrEmpty(levelsJson.text))
+            {
+                repository.LoadFromJson(levelsJson.text);
+            }
+            else
+            {
+                repository.LoadFromResources();
+            }
+
+            repositoryReady = true;
         }
     }
 }

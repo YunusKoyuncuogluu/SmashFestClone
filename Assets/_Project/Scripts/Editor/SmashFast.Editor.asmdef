@@ -2,7 +2,9 @@
     "name": "SmashFast.Editor",
     "rootNamespace": "SmashFast.LevelEditor",
     "references": [
-        "SmashFast.Runtime"
+        "SmashFast.Runtime",
+        "Zenject",
+        "Unity.Formats.Fbx.Editor"
     ],
     "includePlatforms": [
         "Editor"

@@ -1,0 +1,13 @@
+---
+description: No comments, no descriptions, no logs, no summaries in code or chat
+alwaysApply: true
+---
+
+# No Comments / Descriptions / Logs
+
+- No `//`, `/* */`, `///` comments or `<summary>` blocks.
+- No `[Tooltip]` / `[Header]` attributes.
+- No `Debug.Log*` or `print` calls. Guards just `return`.
+- No summary, report or documentation files unless explicitly requested.
+- Delete existing comments, descriptions and logs in any file you touch.
+- Keep chat replies short.

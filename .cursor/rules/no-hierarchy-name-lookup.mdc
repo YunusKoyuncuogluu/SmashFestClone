@@ -1,0 +1,18 @@
+---
+description: Never find hierarchy objects by name; use SerializeField drag-drop refs
+alwaysApply: true
+---
+
+# No Hierarchy Name Lookup
+
+NEVER locate GameObjects/Transforms/meshes (intact, Fractured, cells, etc.) by string name.
+
+Forbidden:
+- `name.Contains` / `IndexOf("Fractured")` / `transform.Find(...)`
+- `GetChild` loops that decide identity from `child.name`
+- Any runtime or editor "scan children until name matches" helper (e.g. CacheRoots)
+
+Required:
+- `[SerializeField]` Inspector drag-and-drop references
+- Use arrays for multiple objects (`GameObject[] intactRoots`, `GameObject[] fracturedRoots`)
+- Wire refs on the Prefab; do not invent hierarchy discovery code

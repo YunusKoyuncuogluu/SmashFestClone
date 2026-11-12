@@ -59,3 +59,22 @@ You are an Elite Senior Unity Game Developer, Physics Specialist, and Custom Edi
   `    action();`
   (or using curly braces).
 - EXCEPTION: Ternary operators (`condition ? true : false`) are fully permitted and acceptable for inline single-line logic.
+
+# 9. Hierarchy / Prefab References (HARD RULE — NEVER VIOLATE)
+- NEVER discover GameObjects, Transforms, meshes, Fractured roots, intact meshes, or any hierarchy child by string name lookup (`name.Contains`, `IndexOf("Fractured")`, `transform.Find`, `GetChild` scan-by-name, recursive name search, etc.).
+- ALWAYS expose Inspector drag-and-drop references via `[SerializeField]` fields.
+- For multiple objects, use arrays (`GameObject[]`, `Transform[]`, etc.) and assign them in the Prefab Inspector.
+- Example (REQUIRED pattern for intact / fractured visuals on blocks):
+  `[SerializeField] private GameObject[] intactRoots;`
+  `[SerializeField] private GameObject[] fracturedRoots;`
+- FORBIDDEN example: looping children and checking `child.name` for `"Fractured"` or treating "the other child" as intact.
+- This applies to runtime AND editor tools (including Scene blueprint preview).
+
+# 10. No Comments, No Descriptions, No Logs, No Summaries (HARD RULE - NEVER VIOLATE)
+- NEVER write comments in code: no `//`, no `/* */`, no `///` XML doc / `<summary>` blocks, no TODO or explanation lines.
+- NEVER add `[Tooltip]` or `[Header]` description attributes.
+- NEVER add `Debug.Log`, `Debug.LogWarning`, `Debug.LogError`, `Debug.LogException` or any other logging or `print` calls.
+- NEVER write summary, report, explanation or documentation files (`*.md` etc.) unless the user explicitly asks.
+- Self-explanatory names replace comments. If a guard fails, simply `return`; do not log.
+- When touching a file, delete any comments, descriptions and logs that already exist in it.
+- The chat reply stays short: what changed, no long write-ups.

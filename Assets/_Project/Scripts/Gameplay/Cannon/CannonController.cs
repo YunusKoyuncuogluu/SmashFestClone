@@ -1,3 +1,4 @@
+using SmashFast.Core.Effects;
 using SmashFast.Core.Pooling;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -10,8 +11,8 @@ namespace SmashFast.Gameplay.Cannon
     {
         [SerializeField] private Transform cannonBarrelTransform;
         [SerializeField] private GameObject projectilePrefab;
-        [SerializeField, Min(0.1f)] private float projectileSpeed = 22f;
-        [SerializeField, Min(0.01f)] private float projectileMass = 2f;
+        [SerializeField, Min(0.1f)] private float projectileSpeed = 14f;
+        [SerializeField, Min(0.01f)] private float projectileMass = 1f;
         [SerializeField, Min(0)] private int prewarmCount = 12;
         [SerializeField, Min(0)] private int startingAmmo = 10;
         [SerializeField, Min(0f)] private float muzzleForwardOffset = 0.6f;
@@ -24,6 +25,7 @@ namespace SmashFast.Gameplay.Cannon
         private readonly RaycastHit[] raycastHits = new RaycastHit[16];
 
         private IUniversalObjectPool objectPool;
+        private FadeMaterialLibrary fadeLibrary;
         private Camera aimCamera;
         private Vector3 baseLocalPosition;
         private float recoilOffset;
@@ -58,9 +60,10 @@ namespace SmashFast.Gameplay.Cannon
         }
 
         [Inject]
-        public void Construct(IUniversalObjectPool objectPool, [InjectOptional] Camera gameplayCamera)
+        public void Construct(IUniversalObjectPool objectPool, FadeMaterialLibrary fadeLibrary, [InjectOptional] Camera gameplayCamera)
         {
             this.objectPool = objectPool;
+            this.fadeLibrary = fadeLibrary;
             if (gameplayCamera != null)
             {
                 aimCamera = gameplayCamera;
@@ -189,7 +192,7 @@ namespace SmashFast.Gameplay.Cannon
                 return;
             }
 
-            projectile.AssignPool(objectPool);
+            projectile.AssignDependencies(objectPool, fadeLibrary);
             if (!projectile.Launch(cannonBarrelTransform.forward, projectileSpeed, projectileMass, this))
             {
                 objectPool.Despawn(projectile.gameObject);
@@ -250,6 +253,11 @@ namespace SmashFast.Gameplay.Cannon
             {
                 RaycastHit hit = raycastHits[i];
                 if (hit.collider == null || IsCannonCollider(hit.collider.transform))
+                {
+                    continue;
+                }
+
+                if (hit.collider.GetComponentInParent<CannonProjectile>() != null)
                 {
                     continue;
                 }

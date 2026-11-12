@@ -23,7 +23,6 @@ namespace SmashFast.Installers
         {
             if (uiManager == null)
             {
-                Debug.LogError("MainMenuSceneInstaller could not resolve UIManager.");
                 return;
             }
 

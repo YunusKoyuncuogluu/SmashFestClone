@@ -1,3 +1,4 @@
+using SmashFast.Core.Effects;
 using SmashFast.Core.Pooling;
 using SmashFast.Data;
 using SmashFast.Flow;
@@ -20,14 +21,11 @@ namespace SmashFast.Installers
             if (levelDatabase != null)
             {
                 Container.Bind<LevelDatabaseSO>().FromInstance(levelDatabase).AsSingle();
+                Container.Bind<JsonLevelRepository>().FromMethod(_ => levelDatabase.Repository).AsSingle();
                 if (levelDatabase.BlockCatalog != null)
                 {
                     Container.Bind<BlockCatalogSO>().FromInstance(levelDatabase.BlockCatalog).AsSingle();
                 }
-            }
-            else
-            {
-                Debug.LogError("ProjectInstaller is missing LevelDatabaseSO.");
             }
 
             if (poolConfig != null)
@@ -39,14 +37,11 @@ namespace SmashFast.Installers
             {
                 Container.Bind<UICatalogSO>().FromInstance(uiCatalog).AsSingle();
             }
-            else
-            {
-                Debug.LogError("ProjectInstaller is missing UICatalogSO.");
-            }
 
             BindUserInterface();
             Container.Bind<GameSessionSlot>().AsSingle();
             Container.BindInterfacesAndSelfTo<PlayerProgressService>().AsSingle().NonLazy();
+            Container.BindInterfacesAndSelfTo<FadeMaterialLibrary>().AsSingle();
             Container.BindInterfacesAndSelfTo<UniversalObjectPool>().AsSingle().NonLazy();
             Container.BindInterfacesAndSelfTo<SceneFlowManager>().AsSingle().NonLazy();
             Container.BindInterfacesAndSelfTo<InitBootstrapper>().AsSingle().NonLazy();
@@ -66,7 +61,6 @@ namespace SmashFast.Installers
 
             if (uiCatalog == null || uiCatalog.CanvasPrefab == null)
             {
-                Debug.LogError("ProjectInstaller is missing the UI canvas prefab.");
                 return;
             }
 
@@ -75,7 +69,6 @@ namespace SmashFast.Installers
             UIManager manager = canvasObject.GetComponent<UIManager>();
             if (manager == null)
             {
-                Debug.LogError("Canvas prefab is missing the UIManager component.");
                 return;
             }
 

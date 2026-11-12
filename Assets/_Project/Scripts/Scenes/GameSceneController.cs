@@ -203,14 +203,12 @@ namespace SmashFast.Scenes
         {
             if (levelDatabase == null || levelSpawner == null || progress == null)
             {
-                Debug.LogError("GameSceneController is missing the level database, spawner, or progress service.");
                 return;
             }
 
             LevelData levelData = levelDatabase.GetLevelDataForInfiniteIndex(levelNumber);
             if (levelData == null)
             {
-                Debug.LogError("Level database has no LevelData.");
                 return;
             }
 

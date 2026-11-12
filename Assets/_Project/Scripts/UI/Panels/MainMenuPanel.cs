@@ -26,7 +26,6 @@ namespace SmashFast.UI.Panels
         private int listCount;
         private int firstVisibleIndex = -1;
         private bool listReady;
-        private bool missingItemWarned;
         private bool isPlayBusy;
 
         [Inject]
@@ -135,12 +134,6 @@ namespace SmashFast.UI.Panels
 
             if (levelItemPrefab == null || levelContent == null || levelScroll == null)
             {
-                if (!missingItemWarned)
-                {
-                    missingItemWarned = true;
-                    Debug.LogError("MainMenuPanel is missing the scroll, content, or level item prefab.");
-                }
-
                 return;
             }
 

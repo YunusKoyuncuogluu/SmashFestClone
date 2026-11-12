@@ -195,7 +195,6 @@ namespace SmashFast.UI
         {
             if (catalog == null)
             {
-                Debug.LogError("UIManager has no UICatalogSO.");
                 return;
             }
 
@@ -228,19 +227,16 @@ namespace SmashFast.UI
             UIPanelBase prefab;
             if (!prefabsByType.TryGetValue(panelType, out prefab) || prefab == null)
             {
-                Debug.LogError("UI catalog is missing " + panelType.Name + ".");
                 return null;
             }
 
             if (container == null)
             {
-                Debug.LogError("UIManager has no Zenject container.");
                 return null;
             }
 
             if (parent == null)
             {
-                Debug.LogError("UIManager has no canvas root.");
                 return null;
             }
 
@@ -253,7 +249,6 @@ namespace SmashFast.UI
 
             if (panel == null)
             {
-                Debug.LogError(panelType.Name + " is not on the catalog prefab.");
                 Object.Destroy(instanceObject);
                 return null;
             }

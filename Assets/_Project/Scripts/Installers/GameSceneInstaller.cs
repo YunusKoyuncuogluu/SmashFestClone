@@ -10,11 +10,21 @@ namespace SmashFast.Installers
     {
         [SerializeField] private Camera gameplayCamera;
         [SerializeField] private CannonController cannonController;
+        [SerializeField] private Collider groundCollider;
+
+        public Collider GroundCollider
+        {
+            get
+            {
+                return groundCollider;
+            }
+        }
 
         public override void InstallBindings()
         {
             BindCamera();
             BindCannon();
+            Container.Bind<Collider>().WithId(LevelSpawner.GroundBindingId).FromInstance(groundCollider).AsSingle();
             Container.BindInterfacesAndSelfTo<LevelSpawner>().AsSingle();
             Container.BindInterfacesAndSelfTo<GameSceneController>().AsSingle().NonLazy();
         }
@@ -45,7 +55,6 @@ namespace SmashFast.Installers
 
             if (sceneCannon == null)
             {
-                Debug.LogWarning("GameSceneInstaller could not find a CannonController.");
                 return;
             }
 

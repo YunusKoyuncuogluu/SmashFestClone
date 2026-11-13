@@ -5,6 +5,9 @@ namespace SmashFest.Level
 {
     public partial class LevelArchitect
     {
+        private const float WingYaw = 30f;
+        private const float TableClearance = 0.25f;
+
         private string ForceMinimalTableLevel(int index)
         {
             BlockDefinition table;
@@ -98,24 +101,26 @@ namespace SmashFest.Level
                 return "Catalog needs a foundation table.";
 
             Vector3Int tableSize = new Vector3Int(3, 1, 2);
-            int gap = 1;
+            bool angled = random.Next(0, 2) == 0;
+            float leftYaw = angled ? -WingYaw : 0f;
+            float rightYaw = angled ? WingYaw : 0f;
+            float overhang = RotatedOverhang(tableSize, rightYaw).x;
+            int gap = GapBetween(overhang, overhang);
             int span = (tableSize.x * 2) + gap;
             if (span > level.GridDimensions.x)
                 return ComposeWideSingleTable(index);
 
             int startX = CenterX(span);
             int originZ = FitZAt(0, tableSize.z);
-            bool angled = random.Next(0, 2) == 0;
-            float leftYaw = angled ? -30f : 0f;
-            float rightYaw = angled ? 30f : 0f;
             int leftX = startX;
             int rightX = startX + tableSize.x + gap;
             PlaceTable(table, leftX, originZ, leftYaw, tableSize);
             PlaceTable(table, rightX, originZ, rightYaw, tableSize);
             int heightCap = HeightCapFor(index);
             BlockDefinition column = blocks.Column(index > 25);
-            BuildStructureOnTable(column, leftX, tableSize, originZ, heightCap, false);
-            BuildStructureOnTable(column, rightX, tableSize, originZ, heightCap, false);
+            int remainingArea = Area(tableSize) * 2;
+            BuildStructureOnTable(column, leftX, tableSize, originZ, heightCap, false, ShareFor(tableSize, ref remainingArea));
+            BuildStructureOnTable(column, rightX, tableSize, originZ, heightCap, false, ShareFor(tableSize, ref remainingArea));
             return "Twin separate tables for level " + index.ToString() + ".";
         }
 
@@ -145,35 +150,44 @@ namespace SmashFest.Level
                 return "Catalog needs a foundation table.";
 
             Vector3Int frontSize = new Vector3Int(3, 1, 2);
-            int rearWidth = Mathf.Min(7, level.GridDimensions.x);
-            int rearDepth = Mathf.Max(2, Mathf.Min(3, level.GridDimensions.z - frontSize.z));
-            Vector3Int rearSize = new Vector3Int(rearWidth, 1, rearDepth);
-            if (rearSize.x < 3 || rearSize.z < 2 || frontSize.z + rearSize.z > level.GridDimensions.z)
+            float frontYaw = WingYaw;
+            int rowGap = GapBetween(RotatedOverhang(frontSize, frontYaw).y, 0f);
+            int rearDepth = Mathf.Min(3, level.GridDimensions.z - frontSize.z - rowGap);
+            if (rearDepth < 2)
+            {
+                frontYaw = 0f;
+                rowGap = 0;
+                rearDepth = Mathf.Min(3, level.GridDimensions.z - frontSize.z);
+            }
+
+            Vector3Int rearSize = new Vector3Int(Mathf.Min(7, level.GridDimensions.x), 1, rearDepth);
+            if (rearSize.x < 3 || rearSize.z < 2 || frontSize.z + rowGap + rearSize.z > level.GridDimensions.z)
                 return ComposeDeepWideTable(index);
 
             int rearX = CenterX(rearSize.x);
-            int rearZ = FitZAt(frontSize.z + 1, rearSize.z);
+            int rearZ = FitZAt(frontSize.z + rowGap, rearSize.z);
             PlaceTable(table, rearX, rearZ, 0f, rearSize);
-            BuildStructureOnTable(blocks.Column(true), rearX, rearSize, rearZ, HeightCapFor(index), true);
 
-            int gap = 1;
+            float frontOverhang = RotatedOverhang(frontSize, frontYaw).x;
+            int gap = GapBetween(frontOverhang, frontOverhang);
             int span = (frontSize.x * 2) + gap;
             int frontZ = FitZAt(0, frontSize.z);
-            if (span <= level.GridDimensions.x)
+            int startX = CenterX(span);
+            bool hasFront = span <= level.GridDimensions.x;
+            if (hasFront)
             {
-                int startX = CenterX(span);
-                PlaceTable(table, startX, frontZ, -30f, frontSize);
-                PlaceTable(table, startX + frontSize.x + gap, frontZ, 30f, frontSize);
-                int frontHeight = Mathf.Max(4, HeightCapFor(index) - 3);
-                BuildStructureOnTable(blocks.wood, startX, frontSize, frontZ, frontHeight, false);
-                BuildStructureOnTable(
-                    blocks.wood,
-                    startX + frontSize.x + gap,
-                    frontSize,
-                    frontZ,
-                    frontHeight,
-                    false);
+                PlaceTable(table, startX, frontZ, -frontYaw, frontSize);
+                PlaceTable(table, startX + frontSize.x + gap, frontZ, frontYaw, frontSize);
             }
+
+            int remainingArea = Area(rearSize) + (hasFront ? Area(frontSize) * 2 : 0);
+            BuildStructureOnTable(blocks.Column(true), rearX, rearSize, rearZ, HeightCapFor(index), true, ShareFor(rearSize, ref remainingArea));
+            if (!hasFront)
+                return "Front-rear tables for level " + index.ToString() + ".";
+
+            int frontHeight = Mathf.Max(4, HeightCapFor(index) - 3);
+            BuildStructureOnTable(blocks.wood, startX, frontSize, frontZ, frontHeight, false, ShareFor(frontSize, ref remainingArea));
+            BuildStructureOnTable(blocks.wood, startX + frontSize.x + gap, frontSize, frontZ, frontHeight, false, ShareFor(frontSize, ref remainingArea));
 
             return "Front-rear tables for level " + index.ToString() + ".";
         }
@@ -203,14 +217,14 @@ namespace SmashFest.Level
             if (!TryGetTable(out table))
                 return "Catalog needs a foundation table.";
 
-            int centerWidth = Mathf.Min(6, level.GridDimensions.x - 8);
+            Vector3Int wingSize = new Vector3Int(3, 1, 2);
+            int gap = GapBetween(RotatedOverhang(wingSize, WingYaw).x, 0f);
+            int centerWidth = Mathf.Min(6, level.GridDimensions.x - wingSize.x * 2 - gap * 2);
             int centerDepth = Mathf.Min(4, level.GridDimensions.z);
             if (centerWidth < 4)
                 return ComposeMegaPlatform(index);
 
             Vector3Int centerSize = new Vector3Int(centerWidth, 1, Mathf.Max(2, centerDepth));
-            Vector3Int wingSize = new Vector3Int(3, 1, 2);
-            int gap = 1;
             int span = wingSize.x + gap + centerSize.x + gap + wingSize.x;
             if (span > level.GridDimensions.x || centerSize.z > level.GridDimensions.z)
                 return ComposeMegaPlatform(index);
@@ -219,13 +233,14 @@ namespace SmashFest.Level
             int centerX = leftX + wingSize.x + gap;
             int rightX = centerX + centerSize.x + gap;
             int originZ = FitZAt(0, centerSize.z);
-            PlaceTable(table, leftX, originZ, -30f, wingSize);
+            PlaceTable(table, leftX, originZ, -WingYaw, wingSize);
             PlaceTable(table, centerX, originZ, 0f, centerSize);
-            PlaceTable(table, rightX, originZ, 30f, wingSize);
+            PlaceTable(table, rightX, originZ, WingYaw, wingSize);
             int height = HeightCapFor(index);
-            BuildStructureOnTable(blocks.wood, leftX, wingSize, originZ, Mathf.Max(4, height - 2), false);
-            BuildStructureOnTable(blocks.Column(true), centerX, centerSize, originZ, height, true);
-            BuildStructureOnTable(blocks.wood, rightX, wingSize, originZ, Mathf.Max(4, height - 2), false);
+            int remainingArea = Area(wingSize) * 2 + Area(centerSize);
+            BuildStructureOnTable(blocks.wood, leftX, wingSize, originZ, Mathf.Max(4, height - 2), false, ShareFor(wingSize, ref remainingArea));
+            BuildStructureOnTable(blocks.Column(true), centerX, centerSize, originZ, height, true, ShareFor(centerSize, ref remainingArea));
+            BuildStructureOnTable(blocks.wood, rightX, wingSize, originZ, Mathf.Max(4, height - 2), false, ShareFor(wingSize, ref remainingArea));
             return "Triple island tables for level " + index.ToString() + ".";
         }
 
@@ -240,12 +255,46 @@ namespace SmashFest.Level
             Vector3Int tableSize,
             int originZ,
             int heightCap,
-            bool tallPeak)
+            bool tallPeak,
+            int share = int.MaxValue)
         {
+            int fullBudget = blockBudget;
+            if (share < int.MaxValue)
+                blockBudget = Mathf.Min(fullBudget, level.PlacementCount + share);
+
             int maxY = heightCap;
             if (maxY > level.GridDimensions.y)
                 maxY = level.GridDimensions.y;
 
+            FillTable(column, originX, tableSize, originZ, maxY, tallPeak);
+            blockBudget = fullBudget;
+        }
+
+        private int Area(Vector3Int tableSize) => tableSize.x * tableSize.z;
+
+        private Vector2 RotatedOverhang(Vector3Int tableSize, float yaw)
+        {
+            float radians = Mathf.Abs(yaw) * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(radians);
+            float sin = Mathf.Sin(radians);
+            float halfX = (tableSize.x * cos + tableSize.z * sin) * 0.5f;
+            float halfZ = (tableSize.x * sin + tableSize.z * cos) * 0.5f;
+            return new Vector2(halfX - tableSize.x * 0.5f, halfZ - tableSize.z * 0.5f);
+        }
+
+        private int GapBetween(float overhangA, float overhangB) => Mathf.CeilToInt(overhangA + overhangB + TableClearance);
+
+        private int ShareFor(Vector3Int tableSize, ref int remainingArea)
+        {
+            int area = Area(tableSize);
+            int remaining = Mathf.Max(0, blockBudget - level.PlacementCount);
+            int share = remainingArea > area ? Mathf.CeilToInt(remaining * (float)area / remainingArea) : remaining;
+            remainingArea -= area;
+            return share;
+        }
+
+        private void FillTable(BlockDefinition column, int originX, Vector3Int tableSize, int originZ, int maxY, bool tallPeak)
+        {
             for (int z = 0; z < tableSize.z; z++)
             {
                 int layerZ = originZ + z;

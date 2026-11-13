@@ -30,7 +30,8 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 1059239771989751496}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1733159128308124280
@@ -73,7 +74,41 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 12b997da07c871a4a846a30ffb9a84d1, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: SmashFast.Runtime::SmashFast.Installers.ProjectInstaller
+  m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.Installers.ProjectInstaller
   levelDatabase: {fileID: 11400000, guid: a1458b60d380c5f4a894c2171c7ad21f, type: 2}
   poolConfig: {fileID: 11400000, guid: 4d288cf4f9252324fa285c6b27f6db39, type: 2}
   uiCatalog: {fileID: 11400000, guid: 85763514a8a782148827de0300245693, type: 2}
+  soundLibrary: {fileID: 11400000, guid: 3e9cef0f0b654d88ba9348556994f6f2, type: 2}
+  poolRoot: {fileID: 1059239771989751496}
+  soundEmitterPrefab: {fileID: 1039184704441197544, guid: 3a2ba653d6a84dbea95d82558ce4099e, type: 3}
+--- !u!1 &1702992676898368000
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1059239771989751496}
+  m_Layer: 0
+  m_Name: Pool
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1059239771989751496
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1702992676898368000}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3116209720134438864}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}

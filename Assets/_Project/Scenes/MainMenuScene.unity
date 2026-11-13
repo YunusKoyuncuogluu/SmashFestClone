@@ -285,7 +285,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c410bf1bccb81dd46a17dec5fa04796c, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: SmashFast.Runtime::SmashFast.Installers.MainMenuSceneInstaller
+  m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.Installers.MainMenuSceneInstaller
 --- !u!114 &868138617
 MonoBehaviour:
   m_ObjectHideFlags: 0

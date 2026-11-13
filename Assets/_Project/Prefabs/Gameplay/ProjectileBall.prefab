@@ -28,7 +28,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 3, y: 3, z: 3}
+  m_LocalScale: {x: 3.210939, y: 3.210939, z: 3.210939}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 2051529848304749212}
@@ -45,9 +45,13 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2d739226c9b4e3c4d9dc64dfaff4af8c, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: SmashFast.Runtime::SmashFast.Gameplay.Cannon.CannonProjectile
+  m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.Gameplay.Cannon.CannonProjectile
   lifetimeSeconds: 4
   despawnBelowY: -10
+  postHitHoldSeconds: 0.8
+  fadeSeconds: 0.6
+  spentAfterHitSeconds: 0.35
+  missDistance: 18
 --- !u!54 &3396740085319692201
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -125,7 +129,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: dd5a58154a459ef4389b6535ec48a84d, type: 3}
       propertyPath: m_Name
-      value: Cannon_Mermi
+      value: BallModel
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace SmashFast.Level
+namespace SmashFest.Level
 {
     public class LevelGroundAnchor
     {

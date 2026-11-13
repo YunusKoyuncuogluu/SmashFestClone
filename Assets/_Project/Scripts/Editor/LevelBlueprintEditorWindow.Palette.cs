@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     public partial class LevelBlueprintEditorWindow
     {
@@ -86,7 +86,7 @@ namespace SmashFast.LevelEditor
                 if (!activeCatalog.TryGetStandalone(selectedCardKey - StandaloneCardKeyOffset, out standalone))
                     return;
 
-                if (IsStandaloneTable(standalone))
+                if (standalone.IsTable())
                 {
                     DrawTableStrip(
                         stripRect,
@@ -290,15 +290,9 @@ namespace SmashFast.LevelEditor
 
                 bool isJar = definition.shapeRole == BlockShapeRole.FragileProp
                     || definition.shapeRole == BlockShapeRole.TopOrnament;
-                if (PassesPaletteFilter(definition.blockName, IsStandaloneTable(definition), isJar, definition.materialType))
+                if (PassesPaletteFilter(definition.blockName, definition.IsTable(), isJar, definition.materialType))
                     visibleCardKeys.Add(StandaloneCardKeyOffset + i);
             }
-        }
-
-        private bool IsStandaloneTable(BlockDefinition definition)
-        {
-            return definition.shapeRole == BlockShapeRole.FoundationTable
-                || definition.materialType == BlockMaterialType.TableFoundation;
         }
 
         private bool PassesPaletteFilter(string name, bool isTable, bool isJarOrProp, BlockMaterialType materialType)
@@ -366,7 +360,7 @@ namespace SmashFast.LevelEditor
                 title = GetCardDisplayName(GetBlockLabel(standalone));
                 preview = GetPreviewTexture(standalone);
                 stripeColor = standalone.editorColor;
-                isTable = IsStandaloneTable(standalone);
+                isTable = standalone.IsTable();
             }
             else
             {
@@ -580,8 +574,7 @@ namespace SmashFast.LevelEditor
 
         private Vector3Int ResolveBrushCustomSize(BlockDefinition definition)
         {
-            if (definition.shapeRole == BlockShapeRole.FoundationTable
-                || definition.materialType == BlockMaterialType.TableFoundation)
+            if (definition.IsTable())
             {
                 return new Vector3Int(
                     Mathf.Clamp(brushTableWidth, 1, 8),

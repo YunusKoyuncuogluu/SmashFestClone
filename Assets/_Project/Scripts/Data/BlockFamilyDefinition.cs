@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace SmashFast.Data
+namespace SmashFest.Data
 {
     [Serializable]
     public class BlockFamilyDefinition
@@ -23,7 +23,6 @@ namespace SmashFast.Data
         public BlockMaterialType materialType = BlockMaterialType.Wood;
         public float baseMass = 5f;
         public float massPerExtraLength = 2f;
-        public float impactBreakThreshold = 3.5f;
 
         public bool fragileProp;
         public bool foundationTable;
@@ -51,18 +50,6 @@ namespace SmashFast.Data
                 5 => length5Prefab,
                 _ => null
             };
-        }
-
-        public void SetLengthPrefab(int length, GameObject prefab)
-        {
-            switch (length)
-            {
-                case 1: length1Prefab = prefab; break;
-                case 2: length2Prefab = prefab; break;
-                case 3: length3Prefab = prefab; break;
-                case 4: length4Prefab = prefab; break;
-                case 5: length5Prefab = prefab; break;
-            }
         }
 
         public int GetHighestAssignedLength()

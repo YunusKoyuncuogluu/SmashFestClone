@@ -1,9 +1,9 @@
 using System.IO;
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     internal class JsonLevelDatabaseIO
     {

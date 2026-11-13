@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace SmashFast.Data
+namespace SmashFest.Data
 {
     public enum BlockMaterialType
     {
@@ -51,15 +51,10 @@ namespace SmashFast.Data
 
         public bool canSupportBlocksAbove;
 
-        public float impactBreakThreshold;
-
         [NonSerialized] public int familyKey;
 
-        public bool IsTarget()
-        {
-            return materialType != BlockMaterialType.TableFoundation
-                && shapeRole != BlockShapeRole.FoundationTable
-                && !isKinematicBase;
-        }
+        public bool IsTable() => shapeRole == BlockShapeRole.FoundationTable || materialType == BlockMaterialType.TableFoundation;
+
+        public bool IsTarget() => !IsTable() && !isKinematicBase;
     }
 }

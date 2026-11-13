@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace SmashFast.Data
+namespace SmashFest.Data
 {
     public class JsonLevelRepository
     {

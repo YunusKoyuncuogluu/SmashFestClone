@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     public partial class LevelBlueprintEditorWindow : EditorWindow
     {
@@ -36,8 +36,9 @@ namespace SmashFast.LevelEditor
         private const float GridScrollbarWidth = 17f;
         private const float PaletteCardMinWidth = 145f;
         private const float PaletteCardGap = 4f;
-        private const float PaletteCardHeight = 42f;        private const string LevelPrefKey = "SmashFast.Blueprint.LevelIndex";
-        private const string CatalogPrefKey = "SmashFast.Blueprint.Catalog";
+        private const float PaletteCardHeight = 42f;
+        private const string LevelPrefKey = "SmashFest.Blueprint.LevelIndex";
+        private const string CatalogPrefKey = "SmashFest.Blueprint.Catalog";
         private const int MaxOverwriteHighlights = 16;
         private const int EditorFrameRate = 120;
 
@@ -58,6 +59,7 @@ namespace SmashFast.LevelEditor
         private LevelDatabaseSO levelDatabase;
         private JsonLevelRepository levelRepository;
         private readonly JsonLevelDatabaseIO jsonIo = new JsonLevelDatabaseIO();
+        private readonly LevelLayerTools layerTools = new LevelLayerTools();
         private int editingLevelIndex = 1;
         private int jumpLevelField = 1;
         private bool jsonDirty;
@@ -159,7 +161,7 @@ namespace SmashFast.LevelEditor
             QualitySettings.vSyncCount = 1;
         }
 
-        [MenuItem("Tools/SmashFast/Level Blueprint Editor")]
+        [MenuItem("Tools/SmashFest/Level Blueprint Editor")]
         public static void Open()
         {
             LevelBlueprintEditorWindow window = GetWindow<LevelBlueprintEditorWindow>();

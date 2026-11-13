@@ -1,8 +1,8 @@
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     [CustomEditor(typeof(BlockCatalogSO))]
     public class BlockCatalogSOEditor : UnityEditor.Editor

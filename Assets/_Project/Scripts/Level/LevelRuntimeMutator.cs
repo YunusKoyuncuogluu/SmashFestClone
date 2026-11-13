@@ -1,7 +1,7 @@
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEngine;
 
-namespace SmashFast.Level
+namespace SmashFest.Level
 {
     public class LevelRuntimeMutator
     {
@@ -75,9 +75,7 @@ namespace SmashFast.Level
                     glassChance += 0.15f;
             }
             else if (gridY <= 2)
-            {
                 glassChance += 0.05f;
-            }
 
             glassChance = Mathf.Min(glassChance, 0.75f);
             stoneChance = Mathf.Min(stoneChance, 0.8f);

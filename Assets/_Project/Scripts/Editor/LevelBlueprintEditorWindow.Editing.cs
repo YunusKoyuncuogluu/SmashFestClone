@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     public partial class LevelBlueprintEditorWindow
     {
@@ -106,7 +106,7 @@ namespace SmashFast.LevelEditor
             int sourceLayer = selectedZLayer - 1;
             CommitLevelChange("Copy Previous Layer", () =>
             {
-                copied = activeLevel.CopyLayer(sourceLayer, selectedZLayer, activeCatalog);
+                copied = layerTools.Copy(activeLevel, sourceLayer, selectedZLayer, activeCatalog);
             });
             statusMessage = "Copied " + copied.ToString() + " blocks from layer " + sourceLayer.ToString() + ".";
         }
@@ -124,7 +124,7 @@ namespace SmashFast.LevelEditor
             int destinationLayer = selectedZLayer + 1;
             CommitLevelChange("Copy Layer To Next", () =>
             {
-                copied = activeLevel.CopyLayer(selectedZLayer, destinationLayer, activeCatalog);
+                copied = layerTools.Copy(activeLevel, selectedZLayer, destinationLayer, activeCatalog);
             });
             statusMessage = "Copied " + copied.ToString() + " blocks to layer " + destinationLayer.ToString() + ".";
         }
@@ -134,7 +134,7 @@ namespace SmashFast.LevelEditor
             if (activeLevel == null)
                 return;
 
-            if (activeLevel.CountLayer(selectedZLayer, activeCatalog) == 0)
+            if (layerTools.Count(activeLevel, selectedZLayer, activeCatalog) == 0)
             {
                 statusMessage = "Layer " + selectedZLayer.ToString() + " is already empty.";
                 return;
@@ -143,7 +143,7 @@ namespace SmashFast.LevelEditor
             int removed = 0;
             CommitLevelChange("Clear Layer", () =>
             {
-                removed = activeLevel.ClearLayer(selectedZLayer, activeCatalog);
+                removed = layerTools.Clear(activeLevel, selectedZLayer, activeCatalog);
             });
             statusMessage = "Cleared " + removed.ToString() + " blocks from layer " + selectedZLayer.ToString() + ".";
         }
@@ -382,7 +382,7 @@ namespace SmashFast.LevelEditor
                 return;
             }
 
-            sceneView.Frame(activeLevel.GetWorldBounds(activeCatalog), false);
+            sceneView.Frame(new LevelLayout(activeLevel, activeCatalog).GetWorldBounds(), false);
             sceneView.Repaint();
         }
 
@@ -393,7 +393,7 @@ namespace SmashFast.LevelEditor
 
             for (int i = 0; i < layerCount; i++)
             {
-                int blockCount = activeLevel != null ? activeLevel.CountLayer(i, activeCatalog) : 0;
+                int blockCount = activeLevel != null ? layerTools.Count(activeLevel, i, activeCatalog) : 0;
                 layerLabels[i] = (position.width < NarrowPaletteWidth ? "L" : "Layer ") + i.ToString() + " (" + blockCount.ToString() + ")";
             }
 

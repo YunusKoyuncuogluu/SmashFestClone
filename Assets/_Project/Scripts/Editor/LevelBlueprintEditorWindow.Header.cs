@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     public partial class LevelBlueprintEditorWindow
     {
@@ -125,7 +125,7 @@ namespace SmashFast.LevelEditor
                     CommitLevelChange("Edit Grid Dimensions", () =>
                     {
                         activeLevel.GridDimensions = clampedDimensions;
-                        activeLevel.RemoveOutOfBounds(activeCatalog);
+                        layerTools.RemoveOutOfBounds(activeLevel, activeCatalog);
                     });
                 }
 
@@ -340,7 +340,7 @@ namespace SmashFast.LevelEditor
                 DrawCompactOrientationRow();
 
             if (!hasBrush && hasSelectedPlacement && activeLevel != null
-                && activeLevel.IsFoundationTable(selectedPlacement, activeCatalog))
+                && new LevelLayout(activeLevel, activeCatalog).IsFoundationTable(selectedPlacement))
             {
                 DrawSelectedTableScaleRow();
             }
@@ -352,7 +352,7 @@ namespace SmashFast.LevelEditor
         {
             EditorGUILayout.BeginHorizontal();
             string title = hasBrush ? "Angle" : "Block";
-            if (!hasBrush && hasSelectedPlacement && activeLevel != null && activeLevel.IsFoundationTable(selectedPlacement, activeCatalog))
+            if (!hasBrush && hasSelectedPlacement && activeLevel != null && new LevelLayout(activeLevel, activeCatalog).IsFoundationTable(selectedPlacement))
                 title = "Table";
 
             EditorGUILayout.LabelField(title, GUILayout.Width(38f));

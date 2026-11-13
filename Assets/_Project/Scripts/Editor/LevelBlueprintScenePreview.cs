@@ -1,12 +1,12 @@
 using System.Collections.Generic;
-using SmashFast.Data;
-using SmashFast.Installers;
-using SmashFast.Level;
+using SmashFest.Data;
+using SmashFest.Installers;
+using SmashFest.Level;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     internal struct BlueprintMoveGhost
     {
@@ -271,7 +271,8 @@ namespace SmashFast.LevelEditor
             Vector3Int effectiveSize = blockFootprint.GetEffectiveSize(sizeInCells, placement.rotationEuler);
             Vector3 worldPos;
             Quaternion worldRot;
-            levelData.GetWorldPose(placement, effectiveSize, catalog, 0f, out worldPos, out worldRot);
+            LevelLayout layout = new LevelLayout(levelData, catalog);
+            layout.GetWorldPose(placement, effectiveSize, 0f, layout.GetCenterShift(), out worldPos, out worldRot);
             worldRot = worldRot * Quaternion.Euler(definition.meshEuler);
             Vector3 scale = ResolveTargetScale(definition, sizeInCells);
             Transform transform = preview.instance.transform;
@@ -329,15 +330,13 @@ namespace SmashFast.LevelEditor
 
         private Vector3 ResolveTargetScale(BlockDefinition definition, Vector3Int sizeInCells)
         {
-            bool foundationTable = definition.shapeRole == BlockShapeRole.FoundationTable
-                || definition.materialType == BlockMaterialType.TableFoundation;
-            if (foundationTable)
+            if (definition.IsTable())
                 return Vector3.one;
 
             if (IsCompoundPrefab(definition.prefab))
-                return levelData.GetCellWorldScale(definition.baseScale);
+                return new LevelLayout(levelData, catalog).GetCellScale(definition.baseScale);
 
-            return levelData.GetFootprintWorldScale(definition.baseScale, sizeInCells);
+            return new LevelLayout(levelData, catalog).GetFootprintScale(definition.baseScale, sizeInCells);
         }
 
         private bool IsCompoundPrefab(GameObject prefab)
@@ -399,15 +398,15 @@ namespace SmashFast.LevelEditor
             if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition))
                 baseScale = definition.baseScale;
 
-            return levelData.GetWorldMatrix(placement, baseScale, sizeInCells, catalog);
+            return new LevelLayout(levelData, catalog).GetWorldMatrix(placement, baseScale, sizeInCells);
         }
 
         private void DrawVolume(LevelData level)
         {
             Vector3Int dimensions = level.GridDimensions;
-            Vector3 cell = level.GetScaledCellSize(catalog);
-            Vector3 size = new Vector3(dimensions.x * cell.x, (dimensions.y * cell.y) + level.GetTableLift(catalog), dimensions.z * cell.z);
-            Vector3 center = level.OriginOffset + (size * 0.5f) + level.GetHorizontalCenterShift(catalog);
+            Vector3 cell = new LevelLayout(level, catalog).CellSize;
+            Vector3 size = new Vector3(dimensions.x * cell.x, (dimensions.y * cell.y) + new LevelLayout(level, catalog).TableLift, dimensions.z * cell.z);
+            Vector3 center = level.OriginOffset + (size * 0.5f) + new LevelLayout(level, catalog).GetCenterShift();
             Color frameColor = new Color(0.45f, 0.9f, 1f, 0.35f);
             using (new Handles.DrawingScope(frameColor, Matrix4x4.Translate(groundAnchor) * Matrix4x4.TRS(center, Quaternion.identity, size)))
             {
@@ -418,8 +417,8 @@ namespace SmashFast.LevelEditor
         private void DrawFloorGrid(LevelData level)
         {
             Vector3Int dimensions = level.GridDimensions;
-            Vector3 cell = level.GetScaledCellSize(catalog);
-            Vector3 origin = level.OriginOffset + level.GetHorizontalCenterShift(catalog);
+            Vector3 cell = new LevelLayout(level, catalog).CellSize;
+            Vector3 origin = level.OriginOffset + new LevelLayout(level, catalog).GetCenterShift();
             Handles.color = new Color(0.3f, 0.86f, 0.95f, 0.9f);
             for (int x = 0; x <= dimensions.x; x++)
             {
@@ -456,12 +455,12 @@ namespace SmashFast.LevelEditor
             if (layer >= dimensions.z)
                 layer = dimensions.z - 1;
 
-            Vector3 cell = level.GetScaledCellSize(catalog);
-            Vector3 origin = level.OriginOffset + level.GetHorizontalCenterShift(catalog);
+            Vector3 cell = new LevelLayout(level, catalog).CellSize;
+            Vector3 origin = level.OriginOffset + new LevelLayout(level, catalog).GetCenterShift();
             float x0 = origin.x;
             float x1 = origin.x + (dimensions.x * cell.x);
             float y0 = origin.y;
-            float y1 = origin.y + (dimensions.y * cell.y) + level.GetTableLift(catalog);
+            float y1 = origin.y + (dimensions.y * cell.y) + new LevelLayout(level, catalog).TableLift;
             float z0 = origin.z + (layer * cell.z);
             float z1 = z0 + cell.z;
             float groundY = origin.y + 0.02f;
@@ -510,7 +509,7 @@ namespace SmashFast.LevelEditor
             if (catalog != null && catalog.TryGetBlockDefinition(placement.blockId, out definition))
                 baseScale = definition.baseScale;
 
-            Matrix4x4 matrix = level.GetWorldMatrix(placement, baseScale, sizeInCells, catalog);
+            Matrix4x4 matrix = new LevelLayout(level, catalog).GetWorldMatrix(placement, baseScale, sizeInCells);
             CompareFunction previousTest = Handles.zTest;
             Handles.zTest = CompareFunction.Always;
             using (new Handles.DrawingScope(wireColor, Matrix4x4.Translate(groundAnchor) * matrix))
@@ -576,7 +575,7 @@ namespace SmashFast.LevelEditor
             if (previewRoot != null)
                 return;
 
-            GameObject root = new GameObject("SmashFast_BlueprintPreviewRoot");
+            GameObject root = new GameObject("SmashFest_BlueprintPreviewRoot");
             root.hideFlags = PreviewHideFlags;
             previewRoot = root.transform;
         }

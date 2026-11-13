@@ -1,7 +1,7 @@
-using SmashFast.Data;
-using SmashFast.Level;
+using SmashFest.Data;
+using SmashFest.Level;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     internal class LevelArchitecturePresetBuilder
     {

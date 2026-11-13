@@ -1,12 +1,12 @@
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     internal class LevelBlueprintSampleAssets
     {
-        [MenuItem("Tools/SmashFast/Create Default Level Assets")]
+        [MenuItem("Tools/SmashFest/Create Default Level Assets")]
         public static void Create()
         {
             new LevelBlueprintSampleAssets().Build();
@@ -15,7 +15,7 @@ namespace SmashFast.LevelEditor
         private void Build()
         {
             EnsureFolder("Assets", "_Project");
-            EnsureFolder(LevelAssetPaths.ProjectFolder, "GameData");
+            EnsureFolder(LevelAssetPaths.ProjectFolder, "Data");
             EnsureFolder("Assets/_Project", "Resources");
             EnsureFolder("Assets/_Project/Resources", "Levels");
 

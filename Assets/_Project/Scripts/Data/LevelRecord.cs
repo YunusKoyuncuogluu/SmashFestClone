@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace SmashFast.Data
+namespace SmashFest.Data
 {
     [Serializable]
     public class LevelRecord

@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     public partial class LevelBlueprintEditorWindow
     {

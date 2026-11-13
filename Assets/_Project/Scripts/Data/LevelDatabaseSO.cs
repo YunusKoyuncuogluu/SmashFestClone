@@ -1,8 +1,8 @@
 using UnityEngine;
 
-namespace SmashFast.Data
+namespace SmashFest.Data
 {
-    [CreateAssetMenu(fileName = "LevelDatabase", menuName = "SmashFast/Level Database", order = 4)]
+    [CreateAssetMenu(fileName = "LevelDatabase", menuName = "SmashFest/Level Database", order = 4)]
     public class LevelDatabaseSO : ScriptableObject
     {
         [SerializeField] private BlockCatalogSO blockCatalog;
@@ -12,16 +12,6 @@ namespace SmashFast.Data
         private bool isReady;
 
         public BlockCatalogSO BlockCatalog => blockCatalog;
-
-        public TextAsset LevelsJson
-        {
-            get => levelsJson;
-            set
-            {
-                levelsJson = value;
-                isReady = false;
-            }
-        }
 
         public JsonLevelRepository Repository
         {
@@ -39,10 +29,6 @@ namespace SmashFast.Data
         public LevelData GetLevelDataForInfiniteIndex(int levelNumber) => Repository.GetLevelDataForInfiniteIndex(levelNumber);
 
         public int GetCycleIndex(int levelNumber) => Repository.GetCycleIndex(levelNumber);
-
-        public LevelData GetLevelByIndex(int levelIndex) => Repository.GetOrCreateLevelData(levelIndex);
-
-        public void Invalidate() => isReady = false;
 
         public void ReloadFromText(string json)
         {

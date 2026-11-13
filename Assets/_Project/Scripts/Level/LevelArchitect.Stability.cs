@@ -1,7 +1,7 @@
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEngine;
 
-namespace SmashFast.Level
+namespace SmashFest.Level
 {
     public partial class LevelArchitect
     {
@@ -42,7 +42,7 @@ namespace SmashFast.Level
             if (!TryGetAnchorDefinition(anchor, out placement, out definition))
                 return;
 
-            if (IsFoundation(definition))
+            if (definition.IsTable())
                 return;
 
             Vector3Int size = level.GetEffectiveSize(placement, catalog);
@@ -170,7 +170,7 @@ namespace SmashFast.Level
                     if (!catalog.TryGetBlockDefinition(placement.blockId, out definition))
                         continue;
 
-                    if (!IsFoundation(definition))
+                    if (!definition.IsTable())
                         continue;
                 }
 
@@ -198,7 +198,7 @@ namespace SmashFast.Level
             if (!TryGetAnchorDefinition(cell, out placement, out definition))
                 return false;
 
-            if (!definition.canSupportBlocksAbove || IsFoundation(definition))
+            if (!definition.canSupportBlocksAbove || definition.IsTable())
                 return false;
 
             Vector3Int size = level.GetEffectiveSize(placement, catalog);

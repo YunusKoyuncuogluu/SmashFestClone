@@ -1,7 +1,7 @@
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEngine;
 
-namespace SmashFast.Level
+namespace SmashFest.Level
 {
     public partial class LevelArchitect
     {
@@ -277,14 +277,6 @@ namespace SmashFast.Level
             return false;
         }
 
-        private bool IsFoundation(BlockDefinition definition)
-        {
-            if (definition.shapeRole == BlockShapeRole.FoundationTable)
-                return true;
-
-            return definition.materialType == BlockMaterialType.TableFoundation;
-        }
-
         private bool TryFindFoundation(bool smallest, out BlockDefinition definition)
         {
             bool found = false;
@@ -297,7 +289,7 @@ namespace SmashFast.Level
                 if (!catalog.TryGetBlockByIndex(i, out candidate))
                     continue;
 
-                if (!IsFoundation(candidate))
+                if (!candidate.IsTable())
                     continue;
 
                 Vector3Int size = footprint.ClampSize(candidate.sizeInCells);

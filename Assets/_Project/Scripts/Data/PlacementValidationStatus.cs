@@ -1,4 +1,4 @@
-namespace SmashFast.Data
+namespace SmashFest.Data
 {
     public enum PlacementValidationStatus
     {

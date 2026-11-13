@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace SmashFast.Fracture
+namespace SmashFest.Fracture
 {
     public sealed class MeshHalfSpaceClipper
     {

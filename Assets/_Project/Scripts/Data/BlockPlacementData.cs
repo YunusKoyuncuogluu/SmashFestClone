@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace SmashFast.Data
+namespace SmashFest.Data
 {
     [Serializable]
     public struct BlockPlacementData

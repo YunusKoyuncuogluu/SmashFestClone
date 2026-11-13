@@ -1,8 +1,8 @@
 using System.Collections.Generic;
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEngine;
 
-namespace SmashFast.Level
+namespace SmashFest.Level
 {
     public partial class LevelArchitect
     {

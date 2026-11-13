@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace SmashFast.Fracture
+namespace SmashFest.Fracture
 {
     [Serializable]
     public struct FractureVertex

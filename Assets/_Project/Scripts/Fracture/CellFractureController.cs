@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace SmashFast.Fracture
+namespace SmashFest.Fracture
 {
     [DisallowMultipleComponent]
     [RequireComponent(typeof(MeshFilter))]
@@ -35,42 +35,6 @@ namespace SmashFast.Fracture
         private bool cachedRendererEnabled = true;
         private float lastAppliedExplosionOffset = float.MinValue;
 
-        public int CellCount
-        {
-            get => cellCount;
-            set => cellCount = Mathf.Clamp(value, 2, 100);
-        }
-
-        public int RandomSeed
-        {
-            get => randomSeed;
-            set => randomSeed = value;
-        }
-
-        public Material InteriorMaterial
-        {
-            get => interiorMaterial;
-            set => interiorMaterial = value;
-        }
-
-        public float InteriorUVScale
-        {
-            get => interiorUVScale;
-            set => interiorUVScale = Mathf.Max(value, Epsilon);
-        }
-
-        public float PreviewExplosionOffset
-        {
-            get => previewExplosionOffset;
-            set => previewExplosionOffset = Mathf.Clamp(value, 0f, 2f);
-        }
-
-        public float TotalMass
-        {
-            get => totalMass;
-            set => totalMass = Mathf.Max(value, Epsilon);
-        }
-
         public bool ConvexColliders
         {
             get => convexColliders;
@@ -90,9 +54,7 @@ namespace SmashFast.Fracture
         }
 
         public IReadOnlyList<Vector3> VoronoiSeeds => voronoiSeeds;
-        public FracturedPiece[] PreviewPieces => previewPieces;
         public bool HasPreview => previewPieces != null && previewPieces.Length > 0;
-        public bool HideSourceDuringPreview => hideSourceDuringPreview;
 
         private void Awake()
         {

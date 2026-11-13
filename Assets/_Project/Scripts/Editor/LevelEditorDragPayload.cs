@@ -1,10 +1,10 @@
 using UnityEditor;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     internal class LevelEditorDragPayload
     {
-        public const string Key = "SmashFast.BlockId";
+        public const string Key = "SmashFest.BlockId";
 
         public void Begin(int blockId, string label)
         {

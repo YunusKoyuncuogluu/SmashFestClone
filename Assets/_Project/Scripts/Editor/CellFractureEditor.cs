@@ -1,8 +1,8 @@
-using SmashFast.Fracture;
+using SmashFest.Fracture;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     [CustomEditor(typeof(CellFractureController))]
     public sealed class CellFractureEditor : UnityEditor.Editor

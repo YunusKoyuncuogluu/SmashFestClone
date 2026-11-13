@@ -1,8 +1,8 @@
-using SmashFast.Fracture;
+using SmashFest.Fracture;
 using UnityEditor;
 using UnityEngine;
 
-namespace SmashFast.LevelEditor
+namespace SmashFest.LevelEditor
 {
     internal sealed class FractureBakeRequest
     {
@@ -30,7 +30,7 @@ namespace SmashFast.LevelEditor
 
     internal sealed class FractureAssetBaker
     {
-        public const string BakedMeshFolder = "Assets/_Project/FracturedMeshes";
+        public const string BakedMeshFolder = "Assets/_Project/Art/FracturedMeshes";
 
         public FractureBakeResult Bake(FractureBakeRequest request)
         {

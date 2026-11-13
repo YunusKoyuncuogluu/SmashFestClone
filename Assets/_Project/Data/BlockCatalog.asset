@@ -41,9 +41,9 @@ MonoBehaviour:
     xColor: {r: 0.16, g: 0.62, b: 0.34, a: 1}
     yColor: {r: 0.1, g: 0.5, b: 0.28, a: 1}
     zColor: {r: 0.45, g: 0.78, b: 0.4, a: 1}
-    materialType: 2
-    baseMass: 4
-    massPerExtraLength: 1.5
+    materialType: 5
+    baseMass: 1.4
+    massPerExtraLength: 0.5
     fragileProp: 0
     foundationTable: 0
     onlyVerticalAxis: 1
@@ -57,9 +57,9 @@ MonoBehaviour:
     xColor: {r: 0.86, g: 0.2, b: 0.2, a: 1}
     yColor: {r: 0.7, g: 0.12, b: 0.16, a: 1}
     zColor: {r: 0.95, g: 0.45, b: 0.4, a: 1}
-    materialType: 2
-    baseMass: 4.5
-    massPerExtraLength: 1.5
+    materialType: 5
+    baseMass: 1.6
+    massPerExtraLength: 0.6
     fragileProp: 0
     foundationTable: 0
     onlyVerticalAxis: 0
@@ -122,8 +122,8 @@ MonoBehaviour:
     yColor: {r: 0.85, g: 0.42, b: 0.12, a: 1}
     zColor: {r: 0.98, g: 0.78, b: 0.35, a: 1}
     materialType: 1
-    baseMass: 4
-    massPerExtraLength: 1.6
+    baseMass: 3
+    massPerExtraLength: 1.5
     fragileProp: 0
     foundationTable: 0
     onlyVerticalAxis: 0
@@ -279,7 +279,7 @@ MonoBehaviour:
     sizeInCells: {x: 1, y: 1, z: 1}
     editorColor: {r: 0.95, g: 0.82, b: 0.25, a: 1}
     isKinematicBase: 0
-    mass: 2.5
-    materialType: 2
+    mass: 0.9
+    materialType: 5
     shapeRole: 4
     canSupportBlocksAbove: 0

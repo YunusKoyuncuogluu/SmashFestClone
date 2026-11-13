@@ -2,6 +2,7 @@ using SmashFest.Audio;
 using SmashFest.Core.Effects;
 using SmashFest.Core.Pooling;
 using SmashFest.Level;
+using SmashFest.Shop;
 using UnityEngine;
 using Zenject;
 
@@ -32,10 +33,13 @@ namespace SmashFest.Gameplay.Cannon
         private IPrefabPool pool;
         private IImpactFeedback feedback;
         private IAudioService audioService;
+        private IBallSkinShop skinShop;
         private ICannonInput input;
         private Camera aimCamera;
         private Vector3? levelCenter;
         private AimResolver aimResolver;
+        private readonly BallisticSolver ballistics = new BallisticSolver();
+        private Vector3 pendingTarget;
         private CannonBarrel cannonBarrel;
         private CannonPedestal cannonPedestal;
         private bool hasPendingShot;
@@ -46,6 +50,8 @@ namespace SmashFest.Gameplay.Cannon
         public int RemainingAmmo { get; private set; }
         public int MaxAmmo { get; private set; }
         public int ActiveProjectileCount { get; private set; }
+        public int ShotsFired { get; private set; }
+        public bool HasUnlimitedAmmo { get; private set; }
 
         [Inject]
         public void Construct(
@@ -54,12 +60,14 @@ namespace SmashFest.Gameplay.Cannon
             ICannonInput input,
             [InjectOptional(Id = LevelSpawner.GroundBindingId)] Collider ground,
             [InjectOptional] IImpactFeedback feedback,
-            [InjectOptional] IAudioService audio)
+            [InjectOptional] IAudioService audio,
+            [InjectOptional] IBallSkinShop skinShop)
         {
             this.input = input;
             this.pool = pool;
             this.feedback = feedback;
             audioService = audio;
+            this.skinShop = skinShop;
             aimCamera = gameplayCamera;
 
             if (ground != null)
@@ -71,7 +79,7 @@ namespace SmashFest.Gameplay.Cannon
             cannonBarrel = new CannonBarrel(barrel != null ? barrel : transform, muzzle, pitchLimits, muzzleOffset, recoilDistance, recoilReturnSpeed);
             cannonPedestal = new CannonPedestal(pedestal, pedestalWidth);
             fireStateHash = Animator.StringToHash(fireState);
-            LoadAmmo(startingAmmo);
+            LoadAmmo(startingAmmo, false);
         }
 
         private void Start()
@@ -92,8 +100,10 @@ namespace SmashFest.Gameplay.Cannon
 
         private void LateUpdate() => cannonBarrel.ApplyAim();
 
-        public void LoadAmmo(int ammo)
+        public void LoadAmmo(int ammo, bool unlimited)
         {
+            HasUnlimitedAmmo = unlimited;
+            ShotsFired = 0;
             MaxAmmo = Mathf.Max(0, ammo);
             RemainingAmmo = MaxAmmo;
             CancelPendingShot();
@@ -133,12 +143,16 @@ namespace SmashFest.Gameplay.Cannon
                 return;
 
             Ray ray = aimCamera.ScreenPointToRay(screenPosition);
-            Vector3 direction = aimResolver.Resolve(aimCamera, ray) - cannonBarrel.Position;
-            if (direction.sqrMagnitude < 0.0001f)
+            Vector3 target = aimResolver.Resolve(aimCamera, ray);
+            if ((target - cannonBarrel.Position).sqrMagnitude < 0.0001f)
                 return;
 
-            cannonBarrel.AimAt(direction, transform.forward);
-            RemainingAmmo--;
+            pendingTarget = target;
+            cannonBarrel.AimAt(ballistics.VelocityToHit(cannonBarrel.Position, target, projectileSpeed), transform.forward);
+            ShotsFired++;
+            if (!HasUnlimitedAmmo)
+                RemainingAmmo--;
+
             ActiveProjectileCount++;
             hasPendingShot = true;
             pendingShotTime = Time.time + (animator != null ? fireDelay : 0f);
@@ -155,8 +169,9 @@ namespace SmashFest.Gameplay.Cannon
                 return;
 
             hasPendingShot = false;
-            Vector3 direction = cannonBarrel.AimDirection;
-            CannonProjectile projectile = pool.Spawn<CannonProjectile>(projectilePrefab, cannonBarrel.MuzzlePosition, Quaternion.LookRotation(direction, Vector3.up));
+            Vector3 muzzle = cannonBarrel.MuzzlePosition;
+            Vector3 velocity = ballistics.VelocityToHit(muzzle, pendingTarget, projectileSpeed);
+            CannonProjectile projectile = pool.Spawn<CannonProjectile>(projectilePrefab, muzzle, Quaternion.LookRotation(velocity, Vector3.up));
             if (projectile == null)
             {
                 OnProjectileSpent();
@@ -164,8 +179,12 @@ namespace SmashFest.Gameplay.Cannon
             }
 
             projectile.AssignDependencies(pool, feedback);
-            projectile.Launch(direction, projectileSpeed, projectileMass, this);
+            if (skinShop != null)
+                projectile.ApplySkin(skinShop.Selected.Material, skinShop.Selected.FadeMaterial);
+
+            projectile.Launch(velocity, projectileMass, this);
             audioService?.PlayCannonFire();
+            feedback?.OnCannonFire();
         }
     }
 }

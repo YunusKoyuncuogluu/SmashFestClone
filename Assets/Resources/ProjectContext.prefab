@@ -1,5 +1,36 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1702992676898368000
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1059239771989751496}
+  m_Layer: 0
+  m_Name: Pool
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1059239771989751496
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1702992676898368000}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3116209720134438864}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3767630717416128875
 GameObject:
   m_ObjectHideFlags: 0
@@ -11,6 +42,7 @@ GameObject:
   - component: {fileID: 3116209720134438864}
   - component: {fileID: 1733159128308124280}
   - component: {fileID: 1912405136545567509}
+  - component: {fileID: 6556499814297478483}
   m_Layer: 0
   m_Name: ProjectContext
   m_TagString: Untagged
@@ -79,36 +111,24 @@ MonoBehaviour:
   poolConfig: {fileID: 11400000, guid: 4d288cf4f9252324fa285c6b27f6db39, type: 2}
   uiCatalog: {fileID: 11400000, guid: 85763514a8a782148827de0300245693, type: 2}
   soundLibrary: {fileID: 11400000, guid: 3e9cef0f0b654d88ba9348556994f6f2, type: 2}
+  ballSkinCatalog: {fileID: 11400000, guid: 7883c2af230ab8048a1398d70c3c132d, type: 2}
+  frameRate:
+    targetFrameRate: 60
+    adaptiveResolution: 1
+    minRenderScale: 0.6
+    scaleStep: 0.1
+    sampleSeconds: 2
+    dropRatio: 0.9
+    recoverRatio: 0.97
+    samplesBeforeRecover: 3
+    hitchSeconds: 0.25
   poolRoot: {fileID: 1059239771989751496}
   soundEmitterPrefab: {fileID: 1039184704441197544, guid: 3a2ba653d6a84dbea95d82558ce4099e, type: 3}
---- !u!1 &1702992676898368000
-GameObject:
+--- !u!81 &6556499814297478483
+AudioListener:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1059239771989751496}
-  m_Layer: 0
-  m_Name: Pool
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1059239771989751496
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1702992676898368000}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 3116209720134438864}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_GameObject: {fileID: 3767630717416128875}
+  m_Enabled: 1

@@ -100,7 +100,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2296920331614165960}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -242,7 +242,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2649070122782493203}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -360,6 +360,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.Level.SpawnedBlock
   intactVisual: {fileID: 8775713800111730794}
   fracturedVisual: {fileID: 8411595183678796529}
+  tableTop: {fileID: 0}
+  fragmentHoldSeconds: 1
+  fragmentFadeSeconds: 1.2
+  fragmentBurstSpeed: 2.2
+  fragmentPushSpeed: 3.5
+  fragmentLiftSpeed: 1.8
+  fragmentSpinSpeed: 10
+  impactBoost: 0.6
 --- !u!1 &3582459926432665775
 GameObject:
   m_ObjectHideFlags: 0
@@ -460,7 +468,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3582459926432665775}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -638,7 +646,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8625373175173468997}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -780,7 +788,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9136801726630576472}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -903,7 +911,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8775713800111730794}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0

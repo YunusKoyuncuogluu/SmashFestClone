@@ -6,148 +6,28 @@ using UnityEngine;
 
 namespace SmashFest.LevelEditor
 {
-    public partial class LevelBlueprintEditorWindow : EditorWindow
+    public class LevelBlueprintEditorWindow : EditorWindow
     {
-        private const float PalettePreviewSize = 34f;
-        private const float FamilyChipHeight = 20f;
-        private const float CardDragThresholdSqr = 16f;
-        private const int StandaloneCardKeyOffset = 100000;
-        private const int DefaultTableWidth = 4;
-        private const int DefaultTableDepth = 2;
         private const float MatrixMinHeight = 220f;
         private const float StatusBarHeight = 18f;
-        private const float PaletteHeight = 245f;
-        private const float PaletteVerticalSlack = 30f;
         private const float LayoutSlack = 14f;
-        private const float WindowPadding = 16f;
-        private const float MatrixRowLabelWidth = 28f;
-        private const float MatrixCellGap = 2f;
-        private const float MatrixHorizontalOverhead = 38f;
-        private const float MatrixVerticalOverhead = 52f;
-        private const float MinMatrixCellSize = 6f;
-        private const float NarrowPaletteWidth = 560f;
-        private const float SizeStripHeight = 58f;
-        private const float StripPadding = 6f;
-        private const float StripColumnGap = 12f;
-        private const float StripLabelWidth = 30f;
-        private const float StripChipGap = 2f;
-        private const float StripRowGap = 4f;
-        private const float TableStripLabelWidth = 68f;
-        private const float GridScrollbarWidth = 17f;
-        private const float PaletteCardMinWidth = 145f;
-        private const float PaletteCardGap = 4f;
-        private const float PaletteCardHeight = 42f;
         private const string LevelPrefKey = "SmashFest.Blueprint.LevelIndex";
         private const string CatalogPrefKey = "SmashFest.Blueprint.Catalog";
-        private const int MaxOverwriteHighlights = 16;
         private const int EditorFrameRate = 120;
 
         [SerializeField] private LevelData currentLevel;
-        private BlockCatalogSO activeCatalog;
-
-        private LevelData activeLevel
-        {
-            get
-            {
-                return currentLevel;
-            }
-            set
-            {
-                currentLevel = value;
-            }
-        }
-        private LevelDatabaseSO levelDatabase;
-        private JsonLevelRepository levelRepository;
-        private readonly JsonLevelDatabaseIO jsonIo = new JsonLevelDatabaseIO();
-        private readonly LevelLayerTools layerTools = new LevelLayerTools();
-        private int editingLevelIndex = 1;
-        private int jumpLevelField = 1;
-        private bool jsonDirty;
-        private int selectedPresetIndex;
-        private int paletteCategoryIndex;
-        private string paletteSearch = string.Empty;
-        private readonly string[] paletteCategoryLabels =
-        {
-            "All",
-            "Tables",
-            "Wood",
-            "Can",
-            "Ice",
-            "Stone",
-            "Jars"
-        };
-        private readonly string[] presetLabels =
-        {
-            "Select Preset...",
-            "Straight Apartment",
-            "45 Degree Angled Tower",
-            "Glass Weak-Point",
-            "Shelf & Jars",
-            "V-Angled Twin Tables"
-        };
-        private int selectedZLayer;
-        private int brushBlockId;
-        private bool hasBrush;
-        private Vector3 brushRotationEuler;
-        private int brushTableWidth = 4;
-        private int brushTableDepth = 2;
-        private bool showDatabaseSettings;
-        private float matrixCellWidth = 24f;
-        private float matrixCellHeight = 24f;
-        private bool hasSelectedPlacement;
-        private BlockPlacementData selectedPlacement;
-        private readonly BlockFootprint blockFootprint = new BlockFootprint();
-        private LevelArchitecturePresetBuilder presetBuilder;
-        private readonly LevelEditorDragPayload dragPayload = new LevelEditorDragPayload();
-        private Vector2 paletteScroll;
-        private Vector2 paletteCardPressPosition;
-        private int selectedCardKey = -1;
         private float topAreaHeight = 230f;
-        private readonly List<int> visibleCardKeys = new List<int>(128);
-        private bool isPainting;
-        private bool isErasing;
-        private Vector3Int lastEditedCell;
-        private bool hasLastEditedCell;
-        private int undoGroup;
-        private bool undoGroupOpen;
-        private string undoGroupName = "Edit Level";
-        private Vector3Int hoveredCell;
-        private bool hasHoveredCell;
-        private bool hoverChanged;
-        private bool dragFootprintActive;
-        private int dragFootprintBlockId;
-        private bool hasFootprintPreview;
-        private Vector3Int footprintAnchor;
-        private Vector3Int footprintSize;
-        private PlacementValidationStatus footprintStatus;
-        private bool hasExistingHover;
-        private BlockPlacementData existingHoverPlacement;
-        private Vector3Int existingHoverSize;
-        private readonly BlockPlacementData[] overwritePlacements = new BlockPlacementData[MaxOverwriteHighlights];
-        private readonly Vector3Int[] overwriteSizes = new Vector3Int[MaxOverwriteHighlights];
-        private int overwriteCount;
-        private HighlightFrame existingFrame;
-        private HighlightFrame previewFrame;
-        private HighlightFrame moveOriginFrame;
-        private readonly HighlightFrame[] overwriteFrames = new HighlightFrame[MaxOverwriteHighlights];
-        private bool isMovingExistingBlock;
-        private BlockPlacementData moveOriginPlacement;
-        private Vector3 moveRotationEuler;
-        private Vector3Int moveGrabOffset;
-        private Vector3Int moveTargetAnchor;
-        private Vector3Int moveFootprintSize;
-        private PlacementValidationStatus moveStatus;
-        private bool hasMovePreview;
-        private string statusMessage = "Select a block from the palette.";
-        [NonSerialized] private GUIStyle cellLabelStyle;
-        [NonSerialized] private GUIStyle matrixLabelStyle;
-        [NonSerialized] private GUIStyle paletteTitleStyle;
-        [NonSerialized] private GUIStyle paletteIdStyle;
-        private string[] layerLabels = Array.Empty<string>();
-        private int cachedLayerCount = -1;
-        private Rect[] matrixCellRects = Array.Empty<Rect>();
-        private int matrixCellStride;
-        private LevelBlueprintScenePreview scenePreview;
+        private LevelEditorState state = new LevelEditorState();
+        private LevelEditorActions actions = new LevelEditorActions();
+        private LevelEditorToolbar toolbar = new LevelEditorToolbar();
+        private LevelEditorMatrixView matrix = new LevelEditorMatrixView();
+        private LevelEditorPaletteView palette = new LevelEditorPaletteView();
+
+        public LevelData CurrentLevel
+        {
+            get => currentLevel;
+            set => currentLevel = value;
+        }
 
         [InitializeOnLoadMethod]
         private static void ApplyEditorFrameLimitOnLoad()
@@ -171,30 +51,31 @@ namespace SmashFest.LevelEditor
 
         public void SetActiveCatalog(BlockCatalogSO catalog)
         {
-            activeCatalog = catalog;
-            if (hasBrush && !CatalogContainsBrush())
-                hasBrush = false;
+            state.activeCatalog = catalog;
+            if (state.hasBrush && !actions.CatalogContainsBrush())
+                state.hasBrush = false;
 
             SaveAssetPrefs();
-            SyncPreview();
+            actions.SyncPreview();
             Repaint();
             SceneView.RepaintAll();
         }
 
         private void OnEnable()
         {
+            BindParts();
             ApplyEditorFrameLimit();
             titleContent = new GUIContent("Level Blueprint");
             minSize = new Vector2(340f, 640f);
             wantsMouseMove = true;
             wantsMouseEnterLeaveWindow = true;
-            scenePreview = new LevelBlueprintScenePreview();
-            scenePreview.Enable();
+            state.scenePreview = new LevelBlueprintScenePreview();
+            state.scenePreview.Enable();
             Selection.selectionChanged += OnSelectionChanged;
             Undo.undoRedoPerformed += OnUndoRedo;
             ObjectChangeEvents.changesPublished += OnAssetChanged;
             RestoreAssets();
-            SyncPreview();
+            actions.SyncPreview();
             SceneView.RepaintAll();
         }
 
@@ -203,21 +84,21 @@ namespace SmashFest.LevelEditor
             Selection.selectionChanged -= OnSelectionChanged;
             Undo.undoRedoPerformed -= OnUndoRedo;
             ObjectChangeEvents.changesPublished -= OnAssetChanged;
-            EndLevelEdit();
-            if (jsonDirty)
-                PersistJson(false);
+            actions.EndLevelEdit();
+            if (state.jsonDirty)
+                actions.PersistJson(false);
 
-            if (scenePreview != null)
+            if (state.scenePreview != null)
             {
-                scenePreview.Disable();
-                scenePreview = null;
+                state.scenePreview.Disable();
+                state.scenePreview = null;
             }
         }
 
         private void OnDestroy()
         {
-            if (jsonDirty)
-                PersistJson(false);
+            if (state.jsonDirty)
+                actions.PersistJson(false);
         }
 
         private void OnFocus()
@@ -233,10 +114,10 @@ namespace SmashFest.LevelEditor
 
         private void OnUndoRedo()
         {
-            CancelMove();
-            hasSelectedPlacement = false;
-            ClampActiveLayer();
-            jsonDirty = true;
+            actions.CancelMove();
+            state.hasSelectedPlacement = false;
+            actions.ClampActiveLayer();
+            state.jsonDirty = true;
             RefreshView();
             SceneView.RepaintAll();
         }
@@ -251,7 +132,7 @@ namespace SmashFest.LevelEditor
 
         private bool TargetsOpenAsset(ref ObjectChangeEventStream stream)
         {
-            int catalogId = activeCatalog != null ? activeCatalog.GetInstanceID() : 0;
+            int catalogId = state.activeCatalog != null ? state.activeCatalog.GetInstanceID() : 0;
             if (catalogId == 0)
                 return false;
 
@@ -271,11 +152,11 @@ namespace SmashFest.LevelEditor
 
         private void RefreshView()
         {
-            if (scenePreview != null)
-                scenePreview.ClearVisualCache();
+            if (state.scenePreview != null)
+                state.scenePreview.ClearVisualCache();
 
-            ClampActiveLayer();
-            SyncPreview();
+            actions.ClampActiveLayer();
+            actions.SyncPreview();
             Repaint();
             SceneView.RepaintAll();
         }
@@ -283,18 +164,18 @@ namespace SmashFest.LevelEditor
         private void OnGUI()
         {
             EnsureStyles();
-            ClampActiveLayer();
+            actions.ClampActiveLayer();
             HandleGlobalEvents();
             float matrixHeight = Mathf.Max(
                 MatrixMinHeight,
-                position.height - topAreaHeight - StatusBarHeight - PaletteHeight - LayoutSlack);
+                position.height - topAreaHeight - StatusBarHeight - LevelEditorState.PaletteHeight - LayoutSlack);
 
             EditorGUILayout.BeginVertical(GUILayout.Width(position.width));
             EditorGUILayout.BeginVertical();
-            DrawCompactHeader();
-            DrawDatabaseSettingsFoldout();
-            DrawLayerBar();
-            DrawActionBar();
+            toolbar.DrawCompactHeader();
+            toolbar.DrawDatabaseSettingsFoldout();
+            toolbar.DrawLayerBar();
+            toolbar.DrawActionBar();
             EditorGUILayout.EndVertical();
             if (Event.current != null && Event.current.type == EventType.Repaint)
             {
@@ -306,16 +187,16 @@ namespace SmashFest.LevelEditor
                 }
             }
 
-            DrawMatrix(matrixHeight);
-            DrawStatusBar();
-            DrawBottomPalette();
+            matrix.DrawMatrix(matrixHeight);
+            palette.DrawStatusBar();
+            palette.DrawBottomPalette();
             EditorGUILayout.EndVertical();
             if (Event.current != null && Event.current.type == EventType.Repaint)
-                SyncPreview();
+                actions.SyncPreview();
 
-            if (hoverChanged)
+            if (state.hoverChanged)
             {
-                hoverChanged = false;
+                state.hoverChanged = false;
                 Repaint();
                 SceneView.RepaintAll();
             }
@@ -328,27 +209,27 @@ namespace SmashFest.LevelEditor
                 return;
 
             if (current.type == EventType.DragExited)
-                dragFootprintActive = false;
+                state.dragFootprintActive = false;
 
-            if (current.type == EventType.MouseLeaveWindow && hasHoveredCell)
+            if (current.type == EventType.MouseLeaveWindow && state.hasHoveredCell)
             {
-                hasHoveredCell = false;
-                hoverChanged = true;
+                state.hasHoveredCell = false;
+                state.hoverChanged = true;
             }
 
-            if ((current.type == EventType.MouseUp || current.type == EventType.MouseLeaveWindow) && (isPainting || isErasing))
+            if ((current.type == EventType.MouseUp || current.type == EventType.MouseLeaveWindow) && (state.isPainting || state.isErasing))
             {
-                EndLevelEdit();
-                isPainting = false;
-                isErasing = false;
-                hasLastEditedCell = false;
+                actions.EndLevelEdit();
+                state.isPainting = false;
+                state.isErasing = false;
+                state.hasLastEditedCell = false;
                 if (current.type == EventType.MouseUp)
                     current.Use();
             }
 
-            if (isMovingExistingBlock && current.type == EventType.MouseUp && current.button == 0)
+            if (state.isMovingExistingBlock && current.type == EventType.MouseUp && current.button == 0)
             {
-                FinishMove();
+                actions.FinishMove();
                 current.Use();
             }
 
@@ -361,10 +242,10 @@ namespace SmashFest.LevelEditor
             if (current.keyCode == KeyCode.R)
             {
                 int direction = current.shift ? -1 : 1;
-                if (isMovingExistingBlock)
-                    StepMoveYaw(direction);
+                if (state.isMovingExistingBlock)
+                    actions.StepMoveYaw(direction);
                 else
-                    StepBrushYaw(direction);
+                    actions.StepBrushYaw(direction);
 
                 current.Use();
                 return;
@@ -372,25 +253,25 @@ namespace SmashFest.LevelEditor
 
             if (current.keyCode == KeyCode.T)
             {
-                CycleLengthAxis();
+                toolbar.CycleLengthAxis();
                 current.Use();
             }
         }
 
         private void RestoreAssets()
         {
-            EnsureRepository();
-            activeCatalog = LoadCatalog();
-            if (activeCatalog != null)
-                activeCatalog.InvalidateRuntimeBlocks();
+            actions.EnsureRepository();
+            state.activeCatalog = LoadCatalog();
+            if (state.activeCatalog != null)
+                state.activeCatalog.InvalidateRuntimeBlocks();
 
             int savedIndex = EditorPrefs.GetInt(LevelPrefKey, 1);
             if (savedIndex < 1)
                 savedIndex = 1;
 
-            NavigateToLevel(savedIndex);
+            actions.NavigateToLevel(savedIndex);
             SaveAssetPrefs();
-            ClampActiveLayer();
+            actions.ClampActiveLayer();
         }
 
         private BlockCatalogSO LoadCatalog()
@@ -430,57 +311,58 @@ namespace SmashFest.LevelEditor
                 || path.StartsWith(LevelAssetPaths.ProjectFolder + "\\", StringComparison.Ordinal);
         }
 
-        private void SaveAssetPrefs()
+        public void SaveAssetPrefs()
         {
-            EditorPrefs.SetInt(LevelPrefKey, editingLevelIndex);
-            string catalogPath = activeCatalog == null ? string.Empty : AssetDatabase.GetAssetPath(activeCatalog);
+            EditorPrefs.SetInt(LevelPrefKey, state.editingLevelIndex);
+            string catalogPath = state.activeCatalog == null ? string.Empty : AssetDatabase.GetAssetPath(state.activeCatalog);
             EditorPrefs.SetString(CatalogPrefKey, catalogPath);
         }
 
         private void EnsureStyles()
         {
-            if (cellLabelStyle != null && matrixLabelStyle != null && paletteTitleStyle != null && paletteIdStyle != null)
+            if (state.cellLabelStyle != null && state.matrixLabelStyle != null && state.paletteTitleStyle != null && state.paletteIdStyle != null)
                 return;
 
-            cellLabelStyle = new GUIStyle(EditorStyles.miniBoldLabel);
-            cellLabelStyle.alignment = TextAnchor.MiddleCenter;
-            cellLabelStyle.wordWrap = true;
-            cellLabelStyle.clipping = TextClipping.Clip;
+            state.cellLabelStyle = new GUIStyle(EditorStyles.miniBoldLabel);
+            state.cellLabelStyle.alignment = TextAnchor.MiddleCenter;
+            state.cellLabelStyle.wordWrap = true;
+            state.cellLabelStyle.clipping = TextClipping.Clip;
 
-            matrixLabelStyle = new GUIStyle(EditorStyles.boldLabel);
-            matrixLabelStyle.alignment = TextAnchor.MiddleCenter;
-            matrixLabelStyle.wordWrap = true;
-            matrixLabelStyle.clipping = TextClipping.Clip;
-            matrixLabelStyle.fontSize = 11;
-            matrixLabelStyle.fixedHeight = 0f;
-            matrixLabelStyle.fixedWidth = 0f;
-            matrixLabelStyle.stretchWidth = true;
-            matrixLabelStyle.stretchHeight = true;
-            matrixLabelStyle.padding = new RectOffset(2, 2, 2, 2);
-            matrixLabelStyle.margin = new RectOffset(0, 0, 0, 0);
-            matrixLabelStyle.contentOffset = Vector2.zero;
+            state.matrixLabelStyle = new GUIStyle(EditorStyles.boldLabel);
+            state.matrixLabelStyle.alignment = TextAnchor.MiddleCenter;
+            state.matrixLabelStyle.wordWrap = true;
+            state.matrixLabelStyle.clipping = TextClipping.Clip;
+            state.matrixLabelStyle.fontSize = 11;
+            state.matrixLabelStyle.fixedHeight = 0f;
+            state.matrixLabelStyle.fixedWidth = 0f;
+            state.matrixLabelStyle.stretchWidth = true;
+            state.matrixLabelStyle.stretchHeight = true;
+            state.matrixLabelStyle.padding = new RectOffset(2, 2, 2, 2);
+            state.matrixLabelStyle.margin = new RectOffset(0, 0, 0, 0);
+            state.matrixLabelStyle.contentOffset = Vector2.zero;
 
-            paletteTitleStyle = new GUIStyle(EditorStyles.miniBoldLabel);
-            paletteTitleStyle.alignment = TextAnchor.MiddleLeft;
-            paletteTitleStyle.fontSize = 11;
-            paletteTitleStyle.clipping = TextClipping.Clip;
-            paletteTitleStyle.wordWrap = true;
+            state.paletteTitleStyle = new GUIStyle(EditorStyles.miniBoldLabel);
+            state.paletteTitleStyle.alignment = TextAnchor.MiddleLeft;
+            state.paletteTitleStyle.fontSize = 11;
+            state.paletteTitleStyle.clipping = TextClipping.Clip;
+            state.paletteTitleStyle.wordWrap = true;
 
-            paletteIdStyle = new GUIStyle(EditorStyles.miniLabel);
-            paletteIdStyle.alignment = TextAnchor.MiddleCenter;
+            state.paletteIdStyle = new GUIStyle(EditorStyles.miniLabel);
+            state.paletteIdStyle.alignment = TextAnchor.MiddleCenter;
         }
 
-        private struct HighlightFrame
+        private void BindParts()
         {
-            public bool active;
-            public bool dashed;
-            public Vector3Int anchor;
-            public Vector3Int size;
-            public Color color;
-            public bool hasTopLeft;
-            public bool hasBottomRight;
-            public Rect topLeft;
-            public Rect bottomRight;
+            state ??= new LevelEditorState();
+            actions ??= new LevelEditorActions();
+            toolbar ??= new LevelEditorToolbar();
+            matrix ??= new LevelEditorMatrixView();
+            palette ??= new LevelEditorPaletteView();
+            state.Bind(this);
+            actions.Bind(this, state, matrix, palette);
+            toolbar.Bind(this, state, actions, palette);
+            matrix.Bind(this, state, actions, palette);
+            palette.Bind(this, state, actions, matrix);
         }
     }
 }

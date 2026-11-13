@@ -114,3 +114,7 @@ InitTestScene*.unity*
 # Paid Asset Store packages (not redistributable)
 /[Aa]ssets/[Pp]lugins/[Ss]irenix/
 /[Aa]ssets/[Pp]lugins/[Ss]irenix.meta
+
+# Local machine settings
+/.mcp.json
+/ProjectSettings/ToonyColorsPro.json

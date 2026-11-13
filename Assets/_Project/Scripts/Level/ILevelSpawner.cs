@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using SmashFest.Data;
 using UnityEngine;
 
@@ -10,6 +11,12 @@ namespace SmashFest.Level
         int ResolvedMaxAmmo { get; }
 
         Bounds LevelBounds { get; }
+
+        bool IsBonusLevel { get; }
+
+        IReadOnlyList<SpawnedBlock> Blocks { get; }
+
+        void EliminateFallenTargets();
 
         void SpawnLevel(LevelData levelData, int displayLevelNumber);
     }

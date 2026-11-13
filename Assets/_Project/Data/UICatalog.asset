@@ -18,3 +18,5 @@ MonoBehaviour:
   successPanelPrefab: {fileID: 3274270384222281389, guid: 0d8317233066235468ed7d16c4956688, type: 3}
   failPanelPrefab: {fileID: 9011840829617785219, guid: df64235aaab701247a0a7d40d9e6a89f, type: 3}
   settingsPopupPrefab: {fileID: 6593531784855074068, guid: a4a34a845ea7d35489fdf9d39d9e40a4, type: 3}
+  shopPopupPrefab: {fileID: 6397224917383190215, guid: a85f5ac799212864f9fbe314a809d56d, type: 3}
+  splashPanelPrefab: {fileID: 410354100758048149, guid: 7650d51f2c78e834685cee6ab63d8f5a, type: 3}

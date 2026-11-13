@@ -31,6 +31,8 @@ namespace SmashFest.UI
             Register(catalog.SuccessPanelPrefab);
             Register(catalog.FailPanelPrefab);
             Register(catalog.SettingsPopupPrefab);
+            Register(catalog.ShopPopupPrefab);
+            Register(catalog.SplashPanelPrefab);
         }
 
         public T ShowPanel<T>() where T : UIPanelBase

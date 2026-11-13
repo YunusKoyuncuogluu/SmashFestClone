@@ -7,7 +7,7 @@ namespace SmashFest.Fracture
     [DisallowMultipleComponent]
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
-    public sealed class CellFractureController : MonoBehaviour
+    public class CellFractureController : MonoBehaviour
     {
         [SerializeField, Range(2, 100)] private int cellCount = 8;
         [SerializeField] private int randomSeed = 1;

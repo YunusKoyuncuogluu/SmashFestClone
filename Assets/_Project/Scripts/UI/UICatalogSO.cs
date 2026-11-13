@@ -12,6 +12,8 @@ namespace SmashFest.UI
         [SerializeField] private SuccessPanel successPanelPrefab;
         [SerializeField] private FailPanel failPanelPrefab;
         [SerializeField] private SettingsPopup settingsPopupPrefab;
+        [SerializeField] private ShopPopup shopPopupPrefab;
+        [SerializeField] private SplashPanel splashPanelPrefab;
 
         public GameObject CanvasPrefab
         {
@@ -52,6 +54,10 @@ namespace SmashFest.UI
                 return failPanelPrefab;
             }
         }
+
+        public ShopPopup ShopPopupPrefab => shopPopupPrefab;
+
+        public SplashPanel SplashPanelPrefab => splashPanelPrefab;
 
         public SettingsPopup SettingsPopupPrefab
         {

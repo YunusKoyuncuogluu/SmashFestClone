@@ -1,10 +1,11 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Zenject;
 
 namespace SmashFest.Progress
 {
-    public class PlayerProgressService : IPlayerProgressService, IInitializable
+    public class PlayerProgressService : IPlayerProgressService, IPlayerDataProvider, IInitializable
     {
         private readonly PlayerDataStore store;
         private PlayerData data = new PlayerData();
@@ -21,12 +22,38 @@ namespace SmashFest.Progress
         public bool SoundEnabled => data.soundEnabled;
         public bool MusicEnabled => data.musicEnabled;
         public bool HapticsEnabled => data.hapticsEnabled;
+        public PlayerData Data => data;
 
         public void Initialize()
         {
             data = store.Load();
             data.highestUnlockedLevel = Mathf.Max(1, data.highestUnlockedLevel);
             data.selectedLevel = Mathf.Clamp(data.selectedLevel, 1, data.highestUnlockedLevel);
+            data.coins = Mathf.Max(0, data.coins);
+            data.levelStars ??= new List<int>();
+            data.ownedSkins ??= new List<string>();
+            data.selectedSkin ??= string.Empty;
+        }
+
+        public void Save() => store.Save(data);
+
+        public int GetStars(int level)
+        {
+            int index = level - 1;
+            return index >= 0 && index < data.levelStars.Count ? data.levelStars[index] : 0;
+        }
+
+        public void RecordStars(int level, int stars)
+        {
+            int index = level - 1;
+            if (index < 0 || stars <= GetStars(level))
+                return;
+
+            while (data.levelStars.Count <= index)
+                data.levelStars.Add(0);
+
+            data.levelStars[index] = Mathf.Clamp(stars, 0, LevelRewardRules.MaxStars);
+            store.Save(data);
         }
 
         public bool IsLevelUnlocked(int level) => level >= 1 && level <= data.highestUnlockedLevel;

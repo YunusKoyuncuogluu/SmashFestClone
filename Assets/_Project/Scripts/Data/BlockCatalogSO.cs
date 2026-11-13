@@ -145,7 +145,7 @@ namespace SmashFest.Data
 
             foreach (BlockDefinition candidate in blocks)
             {
-                if (candidate.materialType != material || candidate.prefab == null || !IsStructural(candidate.shapeRole))
+                if (!candidate.MatchesBuildMaterial(material) || candidate.prefab == null || !IsStructural(candidate.shapeRole))
                     continue;
 
                 if (footprint.ClampSize(candidate.sizeInCells) != targetSize)
@@ -167,7 +167,41 @@ namespace SmashFest.Data
             return found;
         }
 
+        public bool TryPickByMaterialAndSize(BlockMaterialType material, Vector3Int sizeInCells, int seed, out BlockDefinition definition)
+        {
+            BuildBlocks();
+            Vector3Int targetSize = footprint.ClampSize(sizeInCells);
+            definition = default;
+            int count = 0;
+            foreach (BlockDefinition candidate in blocks)
+            {
+                if (IsVariant(candidate, material, targetSize))
+                    count++;
+            }
+
+            if (count == 0)
+                return false;
+
+            int pick = (seed & int.MaxValue) % count;
+            foreach (BlockDefinition candidate in blocks)
+            {
+                if (!IsVariant(candidate, material, targetSize))
+                    continue;
+
+                if (pick-- > 0)
+                    continue;
+
+                definition = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
         public void InvalidateRuntimeBlocks() => isBuilt = false;
+
+        private bool IsVariant(BlockDefinition candidate, BlockMaterialType material, Vector3Int targetSize) =>
+            candidate.materialType == material && candidate.prefab != null && footprint.ClampSize(candidate.sizeInCells) == targetSize;
 
         public int ResolveFamilyBlockId(BlockFamilyDefinition family, int length, int axis) => builder.ResolveFamilyBlockId(family, length, axis);
 

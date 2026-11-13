@@ -8,6 +8,8 @@ namespace SmashFest.Scenes
 
         int MaxAmmo { get; }
 
+        bool HasUnlimitedAmmo { get; }
+
         void RetryLevel();
 
         void LoadNextLevel();

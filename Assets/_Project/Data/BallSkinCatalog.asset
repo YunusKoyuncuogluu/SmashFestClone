@@ -1,0 +1,63 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e57693841cc76e0428c25c03af5499ea, type: 3}
+  m_Name: BallSkinCatalog
+  m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.Shop.BallSkinCatalogSO
+  skins:
+  - id: classic
+    displayName: Classic
+    price: 0
+    material: {fileID: 2100000, guid: b2eee341b9e5fbb43afdf62c4fc8c490, type: 2}
+    fadeMaterial: {fileID: 2100000, guid: 2808e9c0e2a36d44f85960bd4cb7409b, type: 2}
+    icon: {fileID: 21300000, guid: 871c4ffebe54c714da7c2788fc9c8838, type: 3}
+  - id: gold
+    displayName: Gold
+    price: 150
+    material: {fileID: 2100000, guid: d35dba81dbfc8f84a89dde86f1f95045, type: 2}
+    fadeMaterial: {fileID: 2100000, guid: a74721ae625eeee4097091d3966fb764, type: 2}
+    icon: {fileID: 21300000, guid: 06412412944d6554c9969423a047f08e, type: 3}
+  - id: ruby
+    displayName: Ruby
+    price: 250
+    material: {fileID: 2100000, guid: 9bd13ef6812830e4c8c40e8b516d215a, type: 2}
+    fadeMaterial: {fileID: 2100000, guid: a9a7d9f2f5ea15d43a6d3b88735c0830, type: 2}
+    icon: {fileID: 21300000, guid: 0be24cc73d1dcbe44a8656d0b6637b26, type: 3}
+  - id: emerald
+    displayName: Emerald
+    price: 400
+    material: {fileID: 2100000, guid: e3342aaf9f048b9479f6f70ea4a6332d, type: 2}
+    fadeMaterial: {fileID: 2100000, guid: 29cdc25bcb1ce2848a25c27026a7c11d, type: 2}
+    icon: {fileID: 21300000, guid: 5f04f38f5b9fa964d96e1d5c4cf668f3, type: 3}
+  - id: ocean
+    displayName: Ocean
+    price: 600
+    material: {fileID: 2100000, guid: 9822a868a060f1b4b9e38f8265052f65, type: 2}
+    fadeMaterial: {fileID: 2100000, guid: 10dbb0f0b69a14d458a9d54d1bcc8a83, type: 2}
+    icon: {fileID: 21300000, guid: 58901a18a8fc94948b2ffdbe160c9312, type: 3}
+  - id: candy
+    displayName: Candy
+    price: 800
+    material: {fileID: 2100000, guid: 94391bdd6e622204eb549278aa9aa238, type: 2}
+    fadeMaterial: {fileID: 2100000, guid: 8efa84496bac0e94f892138e41e39be3, type: 2}
+    icon: {fileID: 21300000, guid: 4b7534aa687563d46a67e973aa7d61a8, type: 3}
+  - id: ice
+    displayName: Ice
+    price: 1200
+    material: {fileID: 2100000, guid: 07330fce5ba12a348b75128f65b9d254, type: 2}
+    fadeMaterial: {fileID: 2100000, guid: 9e097573d585a68418626206bab5be22, type: 2}
+    icon: {fileID: 21300000, guid: ba615b2a40decf5488745cbc0ee0b4c8, type: 3}
+  - id: midnight
+    displayName: Midnight
+    price: 2000
+    material: {fileID: 2100000, guid: 078fa3183a5dc40419a6df5ca4f2e47e, type: 2}
+    fadeMaterial: {fileID: 2100000, guid: c02d6c0ba891c714ab0da312e695be8e, type: 2}
+    icon: {fileID: 21300000, guid: 3eb286a55c01f9b4c9a715d35bde17e0, type: 3}

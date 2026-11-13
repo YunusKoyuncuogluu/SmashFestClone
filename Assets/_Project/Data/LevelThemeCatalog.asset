@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 54ffdae9d1a708f4ead838b3b5f45756, type: 3}
+  m_Name: LevelThemeCatalog
+  m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.Environment.LevelThemeCatalogSO
+  themes:
+  - {fileID: 11400000, guid: de6dccf4d0ef4be4ab6df6df2b61cff6, type: 2}
+  - {fileID: 11400000, guid: acdc441c8653eb6448b9766efe38762e, type: 2}
+  - {fileID: 11400000, guid: 797e3cd9c30ed4b428b6d1689b52a604, type: 2}
+  - {fileID: 11400000, guid: 4b92a8dfd0d06e748b22444a0529137c, type: 2}
+  levelsPerTheme: 50

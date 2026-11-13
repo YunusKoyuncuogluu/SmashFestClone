@@ -9,6 +9,10 @@ namespace SmashFest.Core.Effects
 
         void OnBlockHit(BlockMaterialType material, float speed);
 
+        void OnBallHitBlock(BlockMaterialType material, float speed);
+
+        void OnCannonFire();
+
         void OnBlockBreak(BlockMaterialType material, Bounds bounds, Material visual, Vector3 push);
 
         void OnBallThud(float speed);

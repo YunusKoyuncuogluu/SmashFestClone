@@ -46,7 +46,11 @@ namespace SmashFest.Level
         private int groundLayer = -1;
         private int breakId;
 
-        private bool BreaksOnBallHit => material == BlockMaterialType.Glass || material == BlockMaterialType.CeramicJar;
+        public bool IsStandingTarget => isTarget && !isBroken;
+        public bool IsFoundation => material == BlockMaterialType.TableFoundation;
+        public bool BreaksOnBallHit => material == BlockMaterialType.Glass || material == BlockMaterialType.CeramicJar;
+        public Bounds VisualBounds => intactRenderer != null ? intactRenderer.bounds : new Bounds(transform.position, Vector3.one);
+
         private BlockPhysics Body => physics ??= new BlockPhysics(GetComponent<Rigidbody>());
         private BlockFracture Fracture => fracture ??= new BlockFracture(intactVisual, fracturedVisual, transform);
         private BlockScaler Scaler => scaler ??= new BlockScaler(transform, tableTop);
@@ -133,7 +137,7 @@ namespace SmashFest.Level
 
             if (Body.IsDormant)
             {
-                if (!isBallHit && speed < WakeSpeed)
+                if (!isBallHit && speed < WakeSpeed && !IsAwakeBlock(otherBody))
                     return;
 
                 WakeUp();
@@ -153,12 +157,20 @@ namespace SmashFest.Level
                 Break(FlatDirection(transform.position - other.transform.position));
         }
 
+        public void EliminateIfFallen(float fallLineY)
+        {
+            if (isTarget && !isBroken && !Body.IsDormant && transform.position.y < fallLineY)
+                Break(Vector3.zero);
+        }
+
         private bool IsGround(Collider other) => groundLayer >= 0 && other.gameObject.layer == groundLayer;
+
+        private bool IsAwakeBlock(Rigidbody other) => other != null && !other.isKinematic && other.TryGetComponent(out SpawnedBlock _);
 
         private void PlayHitSound(bool isBallHit, float speed)
         {
             if (isBallHit)
-                feedback?.OnBlockHit(material, speed);
+                feedback?.OnBallHitBlock(material, speed);
             else if (speed > HitSoundSpeed && Time.time > quietUntil)
                 feedback?.OnBlockHit(material, speed * 0.6f);
         }

@@ -9,7 +9,8 @@ namespace SmashFest.Data
         Wood = 1,
         Stone = 2,
         Glass = 3,
-        CeramicJar = 4
+        CeramicJar = 4,
+        Tin = 5
     }
 
     public enum BlockShapeRole
@@ -56,5 +57,9 @@ namespace SmashFest.Data
         public bool IsTable() => shapeRole == BlockShapeRole.FoundationTable || materialType == BlockMaterialType.TableFoundation;
 
         public bool IsTarget() => !IsTable() && !isKinematicBase;
+
+        public bool IsHeavy() => materialType == BlockMaterialType.Stone || materialType == BlockMaterialType.Tin;
+
+        public bool MatchesBuildMaterial(BlockMaterialType material) => material == BlockMaterialType.Stone ? IsHeavy() : materialType == material;
     }
 }

@@ -19,12 +19,15 @@ namespace SmashFest.UI.Panels
         [SerializeField] private Sprite selectedIcon;
         [SerializeField] private Sprite lockedIcon;
         [SerializeField] private Color lockedLabelColor = new Color(0.49f, 0.48f, 0.66f, 1f);
+        [SerializeField] private Image[] stars;
+        [SerializeField] private Color emptyStarColor = new Color(0.36f, 0.38f, 0.5f, 0.55f);
 
         private RectTransform rect;
         private MainMenuPanel menu;
         private int level;
         private bool isUnlocked;
         private bool isSelected;
+        private int starCount;
         private bool hasApplied;
 
         public RectTransform Rect
@@ -48,15 +51,17 @@ namespace SmashFest.UI.Panels
 
         public void Configure(MainMenuPanel menu) => this.menu = menu;
 
-        public void Apply(int level, bool isUnlocked, bool isSelected)
+        public void Apply(int level, bool isUnlocked, bool isSelected, int starCount)
         {
-            if (hasApplied && level == this.level && isUnlocked == this.isUnlocked && isSelected == this.isSelected)
+            if (hasApplied && level == this.level && isUnlocked == this.isUnlocked && isSelected == this.isSelected && starCount == this.starCount)
                 return;
 
             hasApplied = true;
             this.level = level;
             this.isUnlocked = isUnlocked;
             this.isSelected = isSelected;
+            this.starCount = starCount;
+            ApplyStars();
 
             if (label != null)
             {
@@ -74,6 +79,19 @@ namespace SmashFest.UI.Panels
             {
                 statusIcon.sprite = !isUnlocked ? lockedIcon : isSelected ? selectedIcon : unlockedIcon;
                 statusIcon.color = isUnlocked ? Color.white : lockedLabelColor;
+            }
+        }
+
+        private void ApplyStars()
+        {
+            if (stars == null)
+                return;
+
+            bool show = isUnlocked && starCount > 0;
+            for (int i = 0; i < stars.Length; i++)
+            {
+                stars[i].gameObject.SetActive(show);
+                stars[i].color = i < starCount ? Color.white : emptyStarColor;
             }
         }
 

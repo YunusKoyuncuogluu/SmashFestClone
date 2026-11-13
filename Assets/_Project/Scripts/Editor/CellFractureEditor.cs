@@ -5,7 +5,7 @@ using UnityEngine;
 namespace SmashFest.LevelEditor
 {
     [CustomEditor(typeof(CellFractureController))]
-    public sealed class CellFractureEditor : UnityEditor.Editor
+    public class CellFractureEditor : UnityEditor.Editor
     {
         private readonly FractureAssetBaker fractureBaker = new FractureAssetBaker();
 

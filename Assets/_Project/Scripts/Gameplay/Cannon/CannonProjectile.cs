@@ -20,9 +20,13 @@ namespace SmashFest.Gameplay.Cannon
         [SerializeField, Min(0.05f)] private float fadeSeconds = 0.6f;
         [SerializeField, Min(0f)] private float spentAfterHitSeconds = 0.35f;
         [SerializeField, Min(1f)] private float missDistance = 18f;
+        [SerializeField] private Renderer ballRenderer;
+        [SerializeField] private Material fadeMaterial;
 
         private Rigidbody body;
         private VanishEffect fade;
+        private Material solidMaterial;
+        private Material activeFadeMaterial;
         private IPrefabPool pool;
         private IImpactFeedback feedback;
         private IProjectileLifecycle owner;
@@ -39,9 +43,11 @@ namespace SmashFest.Gameplay.Cannon
             body = GetComponent<Rigidbody>();
             body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             body.interpolation = RigidbodyInterpolation.Interpolate;
-            body.useGravity = false;
+            body.useGravity = true;
 
-            fade = new VanishEffect(new[] { transform });
+            solidMaterial = ballRenderer.sharedMaterial;
+            activeFadeMaterial = fadeMaterial;
+            fade = new VanishEffect(new[] { transform }, new[] { ballRenderer });
         }
 
         public void AssignDependencies(IPrefabPool pool, IImpactFeedback feedback)
@@ -50,12 +56,24 @@ namespace SmashFest.Gameplay.Cannon
             this.feedback = feedback;
         }
 
-        public void Launch(Vector3 direction, float speed, float mass, IProjectileLifecycle owner)
+        public void ApplySkin(Material material, Material skinFadeMaterial)
+        {
+            if (material == null)
+                return;
+
+            solidMaterial = material;
+            activeFadeMaterial = skinFadeMaterial != null ? skinFadeMaterial : fadeMaterial;
+            if (ballRenderer.sharedMaterial != material)
+                ballRenderer.sharedMaterial = material;
+        }
+
+        public void Launch(Vector3 velocity, float mass, IProjectileLifecycle owner)
         {
             body.isKinematic = false;
-            body.useGravity = false;
+            body.useGravity = true;
+            body.linearDamping = 0f;
             body.mass = mass > 0f ? mass : 1f;
-            body.linearVelocity = direction.normalized * Mathf.Max(0f, speed);
+            body.linearVelocity = velocity;
             body.angularVelocity = Vector3.zero;
             body.WakeUp();
 
@@ -105,7 +123,6 @@ namespace SmashFest.Gameplay.Cannon
             if (body.isKinematic)
                 return;
 
-            body.useGravity = true;
             if (hasHit)
                 return;
 
@@ -134,6 +151,10 @@ namespace SmashFest.Gameplay.Cannon
 
         private async UniTaskVoid FadeOutAndDespawn(int id)
         {
+            if (activeFadeMaterial != null)
+                ballRenderer.sharedMaterial = activeFadeMaterial;
+
+            fade.RefreshColors();
             bool canceled = await fade.PlayAsync(fadeSeconds, this.GetCancellationTokenOnDestroy());
             if (!canceled && id == lifeId)
                 pool.Despawn(gameObject);
@@ -144,6 +165,8 @@ namespace SmashFest.Gameplay.Cannon
             lifeId++;
             isFlying = false;
             fade.Restore();
+            if (ballRenderer.sharedMaterial != solidMaterial)
+                ballRenderer.sharedMaterial = solidMaterial;
 
             if (body.isKinematic)
                 return;

@@ -100,7 +100,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 286153305968562760}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -242,7 +242,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1060092006954144002}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -384,7 +384,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2346808670654619515}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -565,7 +565,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4701980491828956580}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -707,7 +707,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5262458877629511551}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -849,7 +849,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5468459951599194684}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -991,7 +991,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7785207448975736376}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -1133,7 +1133,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9130656197037945068}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -1251,6 +1251,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.Level.SpawnedBlock
   intactVisual: {fileID: 7615087707823562575}
   fracturedVisual: {fileID: 2397460765954783904}
+  tableTop: {fileID: 0}
+  fragmentHoldSeconds: 1
+  fragmentFadeSeconds: 1.2
+  fragmentBurstSpeed: 2.2
+  fragmentPushSpeed: 3.5
+  fragmentLiftSpeed: 1.8
+  fragmentSpinSpeed: 10
+  impactBoost: 0.6
 --- !u!1001 &7309148945757331998
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1332,7 +1340,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7615087707823562575}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: df57cc49201bfe14491f322490ed9992, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0

@@ -1,4 +1,5 @@
 using SmashFest.Audio;
+using SmashFest.Core.Feel;
 using SmashFest.Data;
 using UnityEngine;
 using Zenject;
@@ -11,17 +12,33 @@ namespace SmashFest.Core.Effects
 
         private readonly BreakParticles particles;
         private readonly MaterialColorSampler colors = new MaterialColorSampler();
+        private readonly ComboCounter combo;
         private readonly IAudioService audio;
+        private readonly IHapticService haptics;
 
-        public ImpactFeedback(BreakParticles particles, [InjectOptional] IAudioService audio)
+        public ImpactFeedback(
+            BreakParticles particles,
+            ComboCounter combo,
+            [InjectOptional] IAudioService audio,
+            [InjectOptional] IHapticService haptics)
         {
             this.particles = particles;
+            this.combo = combo;
             this.audio = audio;
+            this.haptics = haptics;
         }
 
         public void Prewarm(Material visual) => colors.GetColor(visual);
 
         public void OnBlockHit(BlockMaterialType material, float speed) => audio?.PlayHit(material, Strength(speed));
+
+        public void OnBallHitBlock(BlockMaterialType material, float speed)
+        {
+            audio?.PlayHit(material, Strength(speed));
+            haptics?.Play(HapticPulse.Medium);
+        }
+
+        public void OnCannonFire() => haptics?.Play(HapticPulse.Rigid);
 
         public void OnBallThud(float speed) => audio?.PlayBallThud(Strength(speed));
 
@@ -29,6 +46,8 @@ namespace SmashFest.Core.Effects
         {
             audio?.PlayBreak(material);
             particles.PlayBreak(material, bounds, colors.GetColor(visual), push);
+            haptics?.Play(HapticPulse.Soft);
+            combo.RegisterBreak();
         }
 
         private float Strength(float speed) => Mathf.Clamp01(speed / StrongImpactSpeed);

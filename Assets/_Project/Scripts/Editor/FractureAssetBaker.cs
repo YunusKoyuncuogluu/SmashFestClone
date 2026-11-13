@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace SmashFest.LevelEditor
 {
-    internal sealed class FractureBakeRequest
+    internal class FractureBakeRequest
     {
         public CellFractureController Controller { get; set; }
         public string AssetName { get; set; }
@@ -13,7 +13,7 @@ namespace SmashFest.LevelEditor
         public bool ReplaceExistingAssets { get; set; }
     }
 
-    internal sealed class FractureBakeResult
+    internal class FractureBakeResult
     {
         public GameObject Root { get; set; }
         public GameObject PrefabAsset { get; set; }
@@ -28,7 +28,7 @@ namespace SmashFest.LevelEditor
         }
     }
 
-    internal sealed class FractureAssetBaker
+    internal class FractureAssetBaker
     {
         public const string BakedMeshFolder = "Assets/_Project/Art/FracturedMeshes";
 

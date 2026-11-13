@@ -18,6 +18,10 @@ namespace SmashFest.Progress
 
         bool IsLevelUnlocked(int levelNumber);
 
+        int GetStars(int levelNumber);
+
+        void RecordStars(int levelNumber, int stars);
+
         void SetSelectedLevel(int levelNumber);
 
         void UnlockThrough(int levelNumber);

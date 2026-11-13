@@ -25,7 +25,7 @@ namespace SmashFest.Fracture
         }
     }
 
-    public sealed class FracturedPiece
+    public class FracturedPiece
     {
         public Mesh Mesh;
         public Vector3 LocalCentroid;
@@ -33,7 +33,7 @@ namespace SmashFest.Fracture
         public float VolumeEstimate;
     }
 
-    public sealed class FractureMeshBuffer
+    public class FractureMeshBuffer
     {
         public readonly List<FractureVertex> Vertices;
         public readonly List<int> ExteriorTriangles;

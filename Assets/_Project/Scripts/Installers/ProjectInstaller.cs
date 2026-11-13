@@ -1,11 +1,13 @@
 using SmashFest.Audio;
 using SmashFest.Core.Effects;
+using SmashFest.Core.Feel;
 using SmashFest.Core.Performance;
 using SmashFest.Core.Pooling;
 using SmashFest.Data;
 using SmashFest.Flow;
 using SmashFest.Progress;
 using SmashFest.Scenes;
+using SmashFest.Shop;
 using SmashFest.UI;
 using UnityEngine;
 using Zenject;
@@ -18,6 +20,7 @@ namespace SmashFest.Installers
         [SerializeField] private PoolConfigSO poolConfig;
         [SerializeField] private UICatalogSO uiCatalog;
         [SerializeField] private SoundLibrarySO soundLibrary;
+        [SerializeField] private BallSkinCatalogSO ballSkinCatalog;
         [SerializeField] private FrameRateSettings frameRate = new FrameRateSettings();
         [SerializeField] private Transform poolRoot;
         [SerializeField] private SoundEmitter soundEmitterPrefab;
@@ -31,8 +34,11 @@ namespace SmashFest.Installers
             Container.Bind<GameSessionSlot>().AsSingle();
             Container.Bind<PlayerDataStore>().AsSingle();
             Container.BindInterfacesAndSelfTo<PlayerProgressService>().AsSingle().NonLazy();
+            Container.BindInterfacesAndSelfTo<CoinWallet>().AsSingle();
+            Container.BindInterfacesAndSelfTo<SkinInventory>().AsSingle();
             Container.BindInterfacesAndSelfTo<SoundEmitterPool>().AsSingle().WithArguments(soundEmitterPrefab, poolRoot);
             Container.BindInterfacesAndSelfTo<AudioService>().AsSingle().NonLazy();
+            Container.BindInterfacesAndSelfTo<HapticService>().AsSingle().NonLazy();
             Container.BindInstance(poolRoot).WithId(PrefabPool.RootBindingId);
             Container.BindInterfacesAndSelfTo<PrefabPool>().AsSingle().NonLazy();
             Container.BindInterfacesAndSelfTo<SceneFlowManager>().AsSingle().NonLazy();
@@ -63,6 +69,12 @@ namespace SmashFest.Installers
 
             if (soundLibrary != null)
                 Container.Bind<SoundLibrarySO>().FromInstance(soundLibrary).AsSingle();
+
+            if (ballSkinCatalog != null)
+            {
+                Container.Bind<BallSkinCatalogSO>().FromInstance(ballSkinCatalog).AsSingle();
+                Container.Bind<IBallSkinShop>().To<BallSkinShop>().AsSingle();
+            }
         }
 
         private void BindUserInterface()

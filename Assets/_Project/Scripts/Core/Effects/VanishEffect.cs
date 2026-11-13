@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -16,6 +17,7 @@ namespace SmashFest.Core.Effects
         private readonly Vector3[] baseScales;
         private readonly Renderer[] renderers;
         private readonly Color[][] baseColors;
+        private readonly List<Material> materialBuffer = new List<Material>(4);
 
         private bool isPlaying;
         private int playId;
@@ -28,6 +30,19 @@ namespace SmashFest.Core.Effects
             baseColors = new Color[renderers.Length][];
             for (int i = 0; i < renderers.Length; i++)
                 baseColors[i] = ReadColors(renderers[i]);
+        }
+
+        public void RefreshColors()
+        {
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                renderers[i].GetSharedMaterials(materialBuffer);
+                if (baseColors[i].Length != materialBuffer.Count)
+                    baseColors[i] = new Color[materialBuffer.Count];
+
+                for (int j = 0; j < materialBuffer.Count; j++)
+                    baseColors[i][j] = ColorOf(materialBuffer[j]);
+            }
         }
 
         public async UniTask<bool> PlayAsync(float duration, CancellationToken token)
@@ -68,10 +83,10 @@ namespace SmashFest.Core.Effects
                     targets[i].localScale = baseScales[i];
             }
 
-            foreach (Renderer target in renderers)
+            for (int i = 0; i < renderers.Length; i++)
             {
-                for (int j = 0; j < target.sharedMaterials.Length; j++)
-                    target.SetPropertyBlock(null, j);
+                for (int j = 0; j < baseColors[i].Length; j++)
+                    renderers[i].SetPropertyBlock(null, j);
             }
         }
 
@@ -105,12 +120,14 @@ namespace SmashFest.Core.Effects
             }
         }
 
+        private Color ColorOf(Material material) => material != null && material.HasProperty(baseColorId) ? material.GetColor(baseColorId) : Color.white;
+
         private Color[] ReadColors(Renderer target)
         {
             Material[] materials = target.sharedMaterials;
             Color[] colors = new Color[materials.Length];
             for (int i = 0; i < materials.Length; i++)
-                colors[i] = materials[i] != null && materials[i].HasProperty(baseColorId) ? materials[i].GetColor(baseColorId) : Color.white;
+                colors[i] = ColorOf(materials[i]);
 
             return colors;
         }

@@ -3,6 +3,7 @@
     "rootNamespace": "SmashFest",
     "references": [
         "Zenject",
+        "Lofelt.NiceVibrations",
         "UniTask",
         "Unity.InputSystem",
         "UnityEngine.UI",

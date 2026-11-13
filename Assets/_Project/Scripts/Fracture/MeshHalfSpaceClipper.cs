@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace SmashFest.Fracture
 {
-    public sealed class MeshHalfSpaceClipper
+    public class MeshHalfSpaceClipper
     {
         private const float Epsilon = MeshFracturer.Epsilon;
         private const float EpsilonSqr = Epsilon * Epsilon;

@@ -1,6 +1,7 @@
 using Cysharp.Threading.Tasks;
 using SmashFest.Flow;
 using SmashFest.Progress;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
@@ -9,11 +10,15 @@ namespace SmashFest.UI.Panels
 {
     public class MainMenuPanel : UIPanelBase
     {
+        private const string CoinFormat = "{0:0}";
+
         [SerializeField] private ScrollRect levelScroll;
         [SerializeField] private RectTransform levelContent;
         [SerializeField] private LevelItemButton levelItemPrefab;
         [SerializeField] private Button playButton;
         [SerializeField] private Button settingsButton;
+        [SerializeField] private Button shopButton;
+        [SerializeField] private TMP_Text coinLabel;
         [SerializeField, Min(24f)] private float itemHeight = 88f;
         [SerializeField, Min(0f)] private float itemSpacing;
         [SerializeField, Min(4)] private int poolSize = 14;
@@ -23,6 +28,7 @@ namespace SmashFest.UI.Panels
         private IUIManager ui;
         private ISceneFlowManager sceneFlow;
         private IPlayerProgressService progress;
+        private ICoinWallet wallet;
         private DiContainer container;
         private LevelItemButton[] items;
         private int listCount;
@@ -31,8 +37,9 @@ namespace SmashFest.UI.Panels
         private bool isStarting;
 
         [Inject]
-        public void Construct(IUIManager ui, ISceneFlowManager sceneFlow, IPlayerProgressService progress, DiContainer container)
+        public void Construct(IUIManager ui, ISceneFlowManager sceneFlow, IPlayerProgressService progress, ICoinWallet wallet, DiContainer container)
         {
+            this.wallet = wallet;
             this.container = container;
             this.ui = ui;
             this.sceneFlow = sceneFlow;
@@ -46,6 +53,9 @@ namespace SmashFest.UI.Panels
 
             if (settingsButton != null)
                 settingsButton.onClick.AddListener(OpenSettings);
+
+            if (shopButton != null)
+                shopButton.onClick.AddListener(OpenShop);
         }
 
         public void SelectLevel(int level)
@@ -62,6 +72,16 @@ namespace SmashFest.UI.Panels
         {
             isStarting = false;
             RebuildList();
+            ShowCoins(wallet.Coins);
+            wallet.CoinsChanged += ShowCoins;
+        }
+
+        protected override void OnPanelClosed() => wallet.CoinsChanged -= ShowCoins;
+
+        private void ShowCoins(int coins)
+        {
+            if (coinLabel != null)
+                coinLabel.SetText(CoinFormat, coins);
         }
 
         private async UniTaskVoid StartGame()
@@ -75,6 +95,8 @@ namespace SmashFest.UI.Panels
         }
 
         private void OpenSettings() => ui.ShowPopup<SettingsPopup>();
+
+        private void OpenShop() => ui.ShowPopup<ShopPopup>();
 
         private void RebuildList()
         {
@@ -187,7 +209,7 @@ namespace SmashFest.UI.Panels
             item.Rect.anchoredPosition = new Vector2(0f, -index * itemHeight);
 
             int level = index + 1;
-            item.Apply(level, progress.IsLevelUnlocked(level), level == progress.SelectedLevelNumber);
+            item.Apply(level, progress.IsLevelUnlocked(level), level == progress.SelectedLevelNumber, progress.GetStars(level));
         }
 
         private void UpdateContentHeight()

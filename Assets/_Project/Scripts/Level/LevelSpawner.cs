@@ -12,6 +12,7 @@ namespace SmashFest.Level
     {
         public const string GroundBindingId = "LevelGround";
         public const string RootBindingId = "LevelRoot";
+        private const float FallMargin = 0.1f;
 
         private readonly IPrefabPool pool;
         private readonly IImpactFeedback feedback;
@@ -35,6 +36,9 @@ namespace SmashFest.Level
         public int ActiveDestructibleCount { get; private set; }
         public int ResolvedMaxAmmo { get; private set; }
         public Bounds LevelBounds { get; private set; }
+        public bool IsBonusLevel { get; private set; }
+        public float FallLineY { get; private set; } = float.MinValue;
+        public IReadOnlyList<SpawnedBlock> Blocks => blocks;
 
         public LevelSpawner(
             IPrefabPool pool,
@@ -76,6 +80,7 @@ namespace SmashFest.Level
             lastLevelNumber = levelNumber;
             ResolvedMaxAmmo = 0;
             yawOffset = 0f;
+            IsBonusLevel = mutator.IsBonusLevel(levelNumber);
             if (level == null)
                 return;
 
@@ -114,6 +119,7 @@ namespace SmashFest.Level
             }
 
             LevelBounds = MeasureBounds(anchor);
+            FallLineY = MeasureFallLine();
         }
 
         private Bounds MeasureBounds(Vector3 anchor)
@@ -136,6 +142,33 @@ namespace SmashFest.Level
             }
 
             return bounds;
+        }
+
+        public void EliminateFallenTargets()
+        {
+            for (int i = 0; i < blocks.Count; i++)
+                blocks[i].EliminateIfFallen(FallLineY);
+        }
+
+        private float TopOf(SpawnedBlock table)
+        {
+            float top = float.MinValue;
+            foreach (Collider part in table.GetComponentsInChildren<Collider>())
+                top = Mathf.Max(top, part.bounds.max.y);
+
+            return top;
+        }
+
+        private float MeasureFallLine()
+        {
+            float lowestTop = float.MaxValue;
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                if (blocks[i].IsFoundation)
+                    lowestTop = Mathf.Min(lowestTop, TopOf(blocks[i]));
+            }
+
+            return lowestTop < float.MaxValue ? lowestTop - FallMargin : float.MinValue;
         }
 
         public void UnregisterTarget()
@@ -175,6 +208,9 @@ namespace SmashFest.Level
                 return;
 
             definition = mutator.ResolveBlock(definition, catalog, random, levelNumber, cycle, placement.gridPosition.y);
+            if (IsBonusLevel)
+                definition = mutator.ToBonusBlock(definition, catalog, levelNumber, placement.gridPosition);
+
             if (definition.prefab == null)
                 return;
 

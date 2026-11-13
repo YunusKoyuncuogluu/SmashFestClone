@@ -1,11 +1,10 @@
 {
   "dependencies": {
     "com.antonysze.custom-play-button": {
-      "version": "https://github.com/antonysze/unity-custom-play-button.git",
+      "version": "file:com.antonysze.custom-play-button",
       "depth": 0,
-      "source": "git",
-      "dependencies": {},
-      "hash": "4bde6b308b0211a1e56984a9d06c537a55d20f01"
+      "source": "embedded",
+      "dependencies": {}
     },
     "com.autodesk.fbx": {
       "version": "5.1.3",
@@ -15,19 +14,18 @@
       "url": "https://packages.unity.com"
     },
     "com.coffee.ui-particle": {
-      "version": "https://github.com/mob-sakai/ParticleEffectForUGUI.git#eec288e2a5cfd43743b70e9a8c397d5e5300e80a",
+      "version": "file:com.coffee.ui-particle",
       "depth": 0,
-      "source": "git",
+      "source": "embedded",
       "dependencies": {
         "com.unity.ugui": "1.0.0",
         "com.unity.modules.particlesystem": "1.0.0"
-      },
-      "hash": "eec288e2a5cfd43743b70e9a8c397d5e5300e80a"
+      }
     },
     "com.coplaydev.unity-mcp": {
-      "version": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v10.3.0",
+      "version": "file:com.coplaydev.unity-mcp",
       "depth": 0,
-      "source": "git",
+      "source": "embedded",
       "dependencies": {
         "com.unity.modules.animation": "1.0.0",
         "com.unity.modules.imageconversion": "1.0.0",
@@ -38,22 +36,19 @@
         "com.unity.modules.unitywebrequest": "1.0.0",
         "com.unity.nuget.newtonsoft-json": "3.0.2",
         "com.unity.test-framework": "1.1.31"
-      },
-      "hash": "aa5fc638d623f56178d50329d9ad8c541a57fe66"
+      }
     },
     "com.cysharp.unitask": {
-      "version": "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask",
+      "version": "file:com.cysharp.unitask",
       "depth": 0,
-      "source": "git",
-      "dependencies": {},
-      "hash": "a77a1b4a89824fb6df293099de3060daf2a432c1"
+      "source": "embedded",
+      "dependencies": {}
     },
     "com.marijnzwemmer.unity-toolbar-extender": {
-      "version": "https://github.com/marijnz/unity-toolbar-extender.git",
+      "version": "file:com.marijnzwemmer.unity-toolbar-extender",
       "depth": 0,
-      "source": "git",
-      "dependencies": {},
-      "hash": "395236f9a7a057d2362857e5bb4f3f9a808a9627"
+      "source": "embedded",
+      "dependencies": {}
     },
     "com.unity.ai.navigation": {
       "version": "2.0.14",

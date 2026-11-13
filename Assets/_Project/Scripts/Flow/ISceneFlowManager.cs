@@ -1,6 +1,6 @@
 using Cysharp.Threading.Tasks;
 
-namespace SmashFast.Flow
+namespace SmashFest.Flow
 {
     public interface ISceneFlowManager
     {

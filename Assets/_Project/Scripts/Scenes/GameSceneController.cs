@@ -1,13 +1,15 @@
 using System;
-using SmashFast.Data;
-using SmashFast.Gameplay.Cannon;
-using SmashFast.Level;
-using SmashFast.Progress;
-using SmashFast.UI;
-using SmashFast.UI.Panels;
+using SmashFest.Audio;
+using SmashFest.Data;
+using SmashFest.Gameplay.Cannon;
+using SmashFest.Level;
+using SmashFest.Progress;
+using SmashFest.UI;
+using SmashFest.UI.Panels;
+using UnityEngine;
 using Zenject;
 
-namespace SmashFast.Scenes
+namespace SmashFest.Scenes
 {
     public class GameSceneController : IGameSceneSession, IInitializable, IDisposable, ITickable
     {
@@ -20,26 +22,35 @@ namespace SmashFast.Scenes
         }
 
         private readonly ILevelSpawner spawner;
-        private readonly UIManager ui;
+        private readonly IUIManager ui;
         private readonly IPlayerProgressService progress;
         private readonly LevelDatabaseSO levelDatabase;
         private readonly GameSessionSlot sessionSlot;
         private readonly CannonController cannon;
+        private readonly LevelFraming framing;
+        private readonly IAudioService audio;
+
+        private const float FailDelay = 0.75f;
 
         private GameHudPanel hud;
         private Phase phase;
+        private float outOfBallsTime = -1f;
         private int targetsAtStart;
         private int shownAmmo = -1;
         private int shownMaxAmmo = -1;
 
         public GameSceneController(
             ILevelSpawner spawner,
-            UIManager ui,
+            IUIManager ui,
             IPlayerProgressService progress,
             LevelDatabaseSO levelDatabase,
             GameSessionSlot sessionSlot,
-            [InjectOptional] CannonController cannon)
+            [InjectOptional] CannonController cannon,
+            [InjectOptional] LevelFraming framing,
+            [InjectOptional] IAudioService audio)
         {
+            this.audio = audio;
+            this.framing = framing;
             this.spawner = spawner;
             this.ui = ui;
             this.progress = progress;
@@ -78,7 +89,15 @@ namespace SmashFast.Scenes
                 return;
             }
 
-            if (cannon != null && cannon.RemainingAmmo <= 0 && cannon.ActiveProjectileCount <= 0)
+            if (cannon == null || cannon.RemainingAmmo > 0 || cannon.ActiveProjectileCount > 0)
+            {
+                outOfBallsTime = -1f;
+                return;
+            }
+
+            if (outOfBallsTime < 0f)
+                outOfBallsTime = Time.time;
+            else if (Time.time - outOfBallsTime >= FailDelay)
                 TriggerFail();
         }
 
@@ -105,6 +124,7 @@ namespace SmashFast.Scenes
 
             progress.UnlockThrough(LevelNumber + 1);
             EndLevel(Phase.Won);
+            audio?.PlayLevelWin();
             ui.ShowPanel<SuccessPanel>();
         }
 
@@ -114,6 +134,7 @@ namespace SmashFast.Scenes
                 return;
 
             EndLevel(Phase.Lost);
+            audio?.PlayLevelFail();
             ui.ShowPanel<FailPanel>();
         }
 
@@ -131,9 +152,11 @@ namespace SmashFast.Scenes
                 return;
 
             phase = Phase.Idle;
+            outOfBallsTime = -1f;
             SetCannonInput(false);
 
             spawner.SpawnLevel(levelData, level);
+            framing?.Frame(spawner.LevelBounds);
             targetsAtStart = spawner.ActiveDestructibleCount;
 
             int ammo = spawner.ResolvedMaxAmmo;

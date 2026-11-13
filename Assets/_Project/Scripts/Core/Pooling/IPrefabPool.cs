@@ -1,8 +1,8 @@
 using UnityEngine;
 
-namespace SmashFast.Core.Pooling
+namespace SmashFest.Core.Pooling
 {
-    public interface IUniversalObjectPool
+    public interface IPrefabPool
     {
         void RegisterPrefab(GameObject prefab, int initialSize);
 

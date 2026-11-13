@@ -1,21 +1,22 @@
 using Cysharp.Threading.Tasks;
-using SmashFast.Flow;
-using SmashFast.Progress;
-using SmashFast.Scenes;
+using SmashFest.Flow;
+using SmashFest.Progress;
+using SmashFest.Scenes;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
 
-namespace SmashFast.UI.Panels
+namespace SmashFest.UI.Panels
 {
     public class SettingsPopup : UIPanelBase
     {
         [SerializeField] private Toggle soundToggle;
+        [SerializeField] private Toggle musicToggle;
         [SerializeField] private Toggle hapticsToggle;
         [SerializeField] private Button closeButton;
         [SerializeField] private Button homeButton;
 
-        private UIManager ui;
+        private IUIManager ui;
         private ISceneFlowManager sceneFlow;
         private IPlayerProgressService progress;
         private GameSessionSlot session;
@@ -24,7 +25,7 @@ namespace SmashFast.UI.Panels
         private bool IsInGame => session.Current != null;
 
         [Inject]
-        public void Construct(UIManager ui, ISceneFlowManager sceneFlow, IPlayerProgressService progress, GameSessionSlot session)
+        public void Construct(IUIManager ui, ISceneFlowManager sceneFlow, IPlayerProgressService progress, GameSessionSlot session)
         {
             this.ui = ui;
             this.sceneFlow = sceneFlow;
@@ -36,6 +37,9 @@ namespace SmashFast.UI.Panels
         {
             if (soundToggle != null)
                 soundToggle.onValueChanged.AddListener(enabled => progress.SetSoundEnabled(enabled));
+
+            if (musicToggle != null)
+                musicToggle.onValueChanged.AddListener(enabled => progress.SetMusicEnabled(enabled));
 
             if (hapticsToggle != null)
                 hapticsToggle.onValueChanged.AddListener(enabled => progress.SetHapticsEnabled(enabled));
@@ -55,6 +59,9 @@ namespace SmashFast.UI.Panels
             isBusy = false;
             if (soundToggle != null)
                 soundToggle.SetIsOnWithoutNotify(progress.SoundEnabled);
+
+            if (musicToggle != null)
+                musicToggle.SetIsOnWithoutNotify(progress.MusicEnabled);
 
             if (hapticsToggle != null)
                 hapticsToggle.SetIsOnWithoutNotify(progress.HapticsEnabled);

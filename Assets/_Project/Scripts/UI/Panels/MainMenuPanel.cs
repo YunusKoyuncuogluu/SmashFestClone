@@ -1,11 +1,11 @@
 using Cysharp.Threading.Tasks;
-using SmashFast.Flow;
-using SmashFast.Progress;
+using SmashFest.Flow;
+using SmashFest.Progress;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
 
-namespace SmashFast.UI.Panels
+namespace SmashFest.UI.Panels
 {
     public class MainMenuPanel : UIPanelBase
     {
@@ -15,13 +15,15 @@ namespace SmashFast.UI.Panels
         [SerializeField] private Button playButton;
         [SerializeField] private Button settingsButton;
         [SerializeField, Min(24f)] private float itemHeight = 88f;
+        [SerializeField, Min(0f)] private float itemSpacing;
         [SerializeField, Min(4)] private int poolSize = 14;
         [SerializeField, Min(8)] private int extraLockedLevels = 24;
         [SerializeField, Min(8)] private int minimumListedLevels = 48;
 
-        private UIManager ui;
+        private IUIManager ui;
         private ISceneFlowManager sceneFlow;
         private IPlayerProgressService progress;
+        private DiContainer container;
         private LevelItemButton[] items;
         private int listCount;
         private int firstVisible = -1;
@@ -29,8 +31,9 @@ namespace SmashFast.UI.Panels
         private bool isStarting;
 
         [Inject]
-        public void Construct(UIManager ui, ISceneFlowManager sceneFlow, IPlayerProgressService progress)
+        public void Construct(IUIManager ui, ISceneFlowManager sceneFlow, IPlayerProgressService progress, DiContainer container)
         {
+            this.container = container;
             this.ui = ui;
             this.sceneFlow = sceneFlow;
             this.progress = progress;
@@ -100,7 +103,7 @@ namespace SmashFast.UI.Panels
             items = new LevelItemButton[Mathf.Max(4, poolSize)];
             for (int i = 0; i < items.Length; i++)
             {
-                LevelItemButton item = Instantiate(levelItemPrefab, levelContent);
+                LevelItemButton item = container.InstantiatePrefabForComponent<LevelItemButton>(levelItemPrefab, levelContent);
                 SetupItem(item);
                 items[i] = item;
             }
@@ -127,7 +130,7 @@ namespace SmashFast.UI.Panels
             rect.anchorMin = new Vector2(0f, 1f);
             rect.anchorMax = new Vector2(1f, 1f);
             rect.pivot = new Vector2(0.5f, 1f);
-            rect.sizeDelta = new Vector2(0f, itemHeight);
+            rect.sizeDelta = new Vector2(0f, Mathf.Max(1f, itemHeight - itemSpacing));
         }
 
         private void OnScroll(Vector2 normalizedPosition)

@@ -1,75 +1,86 @@
+using System;
 using UnityEngine;
 using Zenject;
 
-namespace SmashFast.Progress
+namespace SmashFest.Progress
 {
     public class PlayerProgressService : IPlayerProgressService, IInitializable
     {
-        private const string HighestUnlockedKey = "SmashFast.HighestUnlockedLevel";
-        private const string SelectedLevelKey = "SmashFast.SelectedLevelNumber";
-        private const string SoundEnabledKey = "SmashFast.SoundEnabled";
-        private const string HapticsEnabledKey = "SmashFast.HapticsEnabled";
+        private readonly PlayerDataStore store;
+        private PlayerData data = new PlayerData();
 
-        public int HighestUnlockedLevel { get; private set; }
-        public int SelectedLevelNumber { get; private set; }
-        public bool SoundEnabled { get; private set; }
-        public bool HapticsEnabled { get; private set; }
+        public PlayerProgressService(PlayerDataStore store)
+        {
+            this.store = store;
+        }
+
+        public event Action SettingsChanged;
+
+        public int HighestUnlockedLevel => data.highestUnlockedLevel;
+        public int SelectedLevelNumber => data.selectedLevel;
+        public bool SoundEnabled => data.soundEnabled;
+        public bool MusicEnabled => data.musicEnabled;
+        public bool HapticsEnabled => data.hapticsEnabled;
 
         public void Initialize()
         {
-            HighestUnlockedLevel = Mathf.Max(1, PlayerPrefs.GetInt(HighestUnlockedKey, 1));
-            SelectedLevelNumber = Mathf.Clamp(PlayerPrefs.GetInt(SelectedLevelKey, 1), 1, HighestUnlockedLevel);
-            SoundEnabled = PlayerPrefs.GetInt(SoundEnabledKey, 1) != 0;
-            HapticsEnabled = PlayerPrefs.GetInt(HapticsEnabledKey, 1) != 0;
-            ApplySound();
+            data = store.Load();
+            data.highestUnlockedLevel = Mathf.Max(1, data.highestUnlockedLevel);
+            data.selectedLevel = Mathf.Clamp(data.selectedLevel, 1, data.highestUnlockedLevel);
         }
 
-        public bool IsLevelUnlocked(int level) => level >= 1 && level <= HighestUnlockedLevel;
+        public bool IsLevelUnlocked(int level) => level >= 1 && level <= data.highestUnlockedLevel;
 
         public void SetSelectedLevel(int level)
         {
-            level = Mathf.Clamp(level, 1, HighestUnlockedLevel);
-            if (level == SelectedLevelNumber)
+            level = Mathf.Clamp(level, 1, data.highestUnlockedLevel);
+            if (level == data.selectedLevel)
                 return;
 
-            SelectedLevelNumber = level;
-            Save(SelectedLevelKey, level);
+            data.selectedLevel = level;
+            store.Save(data);
         }
 
         public void UnlockThrough(int level)
         {
-            if (level <= HighestUnlockedLevel)
+            if (level <= data.highestUnlockedLevel)
                 return;
 
-            HighestUnlockedLevel = level;
-            Save(HighestUnlockedKey, level);
+            data.highestUnlockedLevel = level;
+            store.Save(data);
         }
 
         public void SetSoundEnabled(bool enabled)
         {
-            if (SoundEnabled == enabled)
+            if (data.soundEnabled == enabled)
                 return;
 
-            SoundEnabled = enabled;
-            Save(SoundEnabledKey, enabled ? 1 : 0);
-            ApplySound();
+            data.soundEnabled = enabled;
+            SaveSettings();
+        }
+
+        public void SetMusicEnabled(bool enabled)
+        {
+            if (data.musicEnabled == enabled)
+                return;
+
+            data.musicEnabled = enabled;
+            SaveSettings();
         }
 
         public void SetHapticsEnabled(bool enabled)
         {
-            if (HapticsEnabled == enabled)
+            if (data.hapticsEnabled == enabled)
                 return;
 
-            HapticsEnabled = enabled;
-            Save(HapticsEnabledKey, enabled ? 1 : 0);
+            data.hapticsEnabled = enabled;
+            SaveSettings();
         }
 
-        private void ApplySound() => AudioListener.volume = SoundEnabled ? 1f : 0f;
-
-        private void Save(string key, int value)
+        private void SaveSettings()
         {
-            PlayerPrefs.SetInt(key, value);
-            PlayerPrefs.Save();
+            store.Save(data);
+            SettingsChanged?.Invoke();
         }
     }
 }

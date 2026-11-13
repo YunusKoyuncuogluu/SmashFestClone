@@ -1,4 +1,4 @@
-namespace SmashFast.Core.Pooling
+namespace SmashFest.Core.Pooling
 {
     public interface IPoolable
     {

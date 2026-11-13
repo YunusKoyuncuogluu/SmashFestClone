@@ -1,29 +1,29 @@
-using SmashFast.Scenes;
+using SmashFest.Scenes;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
 
-namespace SmashFast.UI.Panels
+namespace SmashFest.UI.Panels
 {
     public class GameHudPanel : UIPanelBase
     {
-        private const string LevelFormat = "LEVEL {0:0}";
-        private const string AmmoFormat = "Ammo: {0:0}/{1:0}";
+        private const string LevelFormat = "Level {0:0}";
+        private const string AmmoFormat = "{0:0}/{1:0}";
 
         [SerializeField] private TMP_Text levelLabel;
         [SerializeField] private TMP_Text ammoLabel;
         [SerializeField] private Button settingsButton;
         [SerializeField] private Button restartButton;
 
-        private UIManager ui;
+        private IUIManager ui;
         private GameSessionSlot session;
         private int shownLevel = -1;
         private int shownAmmo = -1;
         private int shownMaxAmmo = -1;
 
         [Inject]
-        public void Construct(UIManager ui, GameSessionSlot session)
+        public void Construct(IUIManager ui, GameSessionSlot session)
         {
             this.ui = ui;
             this.session = session;

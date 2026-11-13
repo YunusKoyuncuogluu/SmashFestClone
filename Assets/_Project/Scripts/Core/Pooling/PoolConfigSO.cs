@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace SmashFast.Core.Pooling
+namespace SmashFest.Core.Pooling
 {
-    [CreateAssetMenu(fileName = "PoolConfig", menuName = "SmashFast/Pool Config", order = 2)]
+    [CreateAssetMenu(fileName = "PoolConfig", menuName = "SmashFest/Pool Config", order = 2)]
     public class PoolConfigSO : ScriptableObject
     {
         [SerializeField] private List<PoolItemConfig> customPools = new List<PoolItemConfig>(8);
@@ -23,9 +23,7 @@ namespace SmashFast.Core.Pooling
             get
             {
                 if (catalogPrewarmCount < 0)
-                {
                     return 0;
-                }
 
                 return catalogPrewarmCount;
             }

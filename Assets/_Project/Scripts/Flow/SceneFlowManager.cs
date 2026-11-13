@@ -1,21 +1,21 @@
 using Cysharp.Threading.Tasks;
-using SmashFast.Core.Pooling;
-using SmashFast.Progress;
-using SmashFast.UI;
-using SmashFast.UI.Panels;
+using SmashFest.Core.Pooling;
+using SmashFest.Progress;
+using SmashFest.UI;
+using SmashFest.UI.Panels;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace SmashFast.Flow
+namespace SmashFest.Flow
 {
     public class SceneFlowManager : ISceneFlowManager
     {
-        private readonly IUniversalObjectPool pool;
-        private readonly UIManager ui;
+        private readonly IPrefabPool pool;
+        private readonly IUIManager ui;
         private readonly IPlayerProgressService progress;
         private bool isLoading;
 
-        public SceneFlowManager(IUniversalObjectPool pool, UIManager ui, IPlayerProgressService progress)
+        public SceneFlowManager(IPrefabPool pool, IUIManager ui, IPlayerProgressService progress)
         {
             this.pool = pool;
             this.ui = ui;
@@ -60,14 +60,13 @@ namespace SmashFast.Flow
         private async UniTask<bool> LoadSceneAsync(string sceneName)
         {
             pool.DespawnAllActive();
-            ui.HideAllPanels();
+            ui.HidePopups();
 
             AsyncOperation operation = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single);
             if (operation == null)
                 return false;
 
             await operation.ToUniTask();
-            ui.RemoveDuplicateEventSystems();
             return true;
         }
     }

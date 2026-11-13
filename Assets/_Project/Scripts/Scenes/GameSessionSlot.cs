@@ -1,4 +1,4 @@
-namespace SmashFast.Scenes
+namespace SmashFest.Scenes
 {
     public interface IGameSceneSession
     {
@@ -31,9 +31,7 @@ namespace SmashFast.Scenes
         public void Clear(IGameSceneSession session)
         {
             if (Current == session)
-            {
                 Current = null;
-            }
         }
     }
 }

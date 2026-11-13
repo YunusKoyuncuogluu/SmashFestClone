@@ -1,65 +1,47 @@
-using SmashFast.Gameplay.Cannon;
-using SmashFast.Level;
-using SmashFast.Scenes;
+using SmashFest.Core.Effects;
+using SmashFest.Gameplay.Cannon;
+using SmashFest.Level;
+using SmashFest.Scenes;
 using UnityEngine;
 using Zenject;
 
-namespace SmashFast.Installers
+namespace SmashFest.Installers
 {
     public class GameSceneInstaller : MonoInstaller
     {
         [SerializeField] private Camera gameplayCamera;
         [SerializeField] private CannonController cannonController;
         [SerializeField] private Collider groundCollider;
+        [SerializeField] private Transform levelRoot;
+        [SerializeField] private BreakParticles breakEffectsPrefab;
+        [SerializeField] private LevelFramingSettings framing = new LevelFramingSettings();
 
-        public Collider GroundCollider
-        {
-            get
-            {
-                return groundCollider;
-            }
-        }
+        public Collider GroundCollider => groundCollider;
 
         public override void InstallBindings()
         {
             BindCamera();
+            Container.Bind<ICannonInput>().To<PointerShotInput>().AsSingle();
             BindCannon();
             Container.Bind<Collider>().WithId(LevelSpawner.GroundBindingId).FromInstance(groundCollider).AsSingle();
+            Container.BindInstance(levelRoot).WithId(LevelSpawner.RootBindingId);
+            Container.Bind<BreakParticles>().FromComponentInNewPrefab(breakEffectsPrefab).AsSingle();
+            Container.BindInstance(framing).AsSingle();
+            Container.BindInterfacesAndSelfTo<ImpactFeedback>().AsSingle();
+            Container.Bind<LevelFraming>().AsSingle();
             Container.BindInterfacesAndSelfTo<LevelSpawner>().AsSingle();
             Container.BindInterfacesAndSelfTo<GameSceneController>().AsSingle().NonLazy();
         }
 
-        private void BindCamera()
-        {
-            Camera sceneCamera = gameplayCamera;
-            if (sceneCamera == null)
-            {
-                sceneCamera = Camera.main;
-            }
-
-            if (sceneCamera == null)
-            {
-                return;
-            }
-
-            Container.Bind<Camera>().FromInstance(sceneCamera).AsSingle();
-        }
+        private void BindCamera() => Container.Bind<Camera>().FromInstance(gameplayCamera).AsSingle();
 
         private void BindCannon()
         {
-            CannonController sceneCannon = cannonController;
-            if (sceneCannon == null)
-            {
-                sceneCannon = FindAnyObjectByType<CannonController>();
-            }
-
-            if (sceneCannon == null)
-            {
+            if (cannonController == null)
                 return;
-            }
 
-            Container.Bind<CannonController>().FromInstance(sceneCannon).AsSingle();
-            Container.QueueForInject(sceneCannon);
+            Container.Bind<CannonController>().FromInstance(cannonController).AsSingle();
+            Container.QueueForInject(cannonController);
         }
     }
 }

@@ -1,4 +1,4 @@
-namespace SmashFast.Flow
+namespace SmashFest.Flow
 {
     public class SceneNames
     {

@@ -1,11 +1,11 @@
 using Cysharp.Threading.Tasks;
-using SmashFast.Flow;
-using SmashFast.Scenes;
+using SmashFest.Flow;
+using SmashFest.Scenes;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
 
-namespace SmashFast.UI.Panels
+namespace SmashFest.UI.Panels
 {
     public class SuccessPanel : UIPanelBase
     {

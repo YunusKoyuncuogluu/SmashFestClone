@@ -1,32 +1,25 @@
-using SmashFast.UI;
-using SmashFast.UI.Panels;
-using UnityEngine;
+using SmashFest.UI;
+using SmashFest.UI.Panels;
 using Zenject;
 
-namespace SmashFast.Installers
+namespace SmashFest.Installers
 {
     public class MainMenuSceneInstaller : MonoInstaller
     {
-        private UIManager uiManager;
+        private IUIManager uiManager;
 
         [Inject]
-        public void Construct(UIManager uiManager)
-        {
-            this.uiManager = uiManager;
-        }
+        public void Construct(IUIManager uiManager) => this.uiManager = uiManager;
 
         public override void InstallBindings()
         {
         }
 
-        private void Start()
+        public override void Start()
         {
-            if (uiManager == null)
-            {
-                return;
-            }
-
-            uiManager.ShowPanel<MainMenuPanel>();
+            base.Start();
+            if (uiManager != null)
+                uiManager.ShowPanel<MainMenuPanel>();
         }
     }
 }

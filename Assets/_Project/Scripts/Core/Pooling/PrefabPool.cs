@@ -1,12 +1,14 @@
 using System.Collections.Generic;
-using SmashFast.Data;
+using SmashFest.Data;
 using UnityEngine;
 using Zenject;
 
-namespace SmashFast.Core.Pooling
+namespace SmashFest.Core.Pooling
 {
-    public class UniversalObjectPool : IUniversalObjectPool, IInitializable
+    public class PrefabPool : IPrefabPool, IInitializable
     {
+        public const string RootBindingId = "PoolRoot";
+
         private const int DefaultCatalogPrewarm = 4;
 
         private readonly PoolConfigSO config;
@@ -16,11 +18,12 @@ namespace SmashFast.Core.Pooling
         private readonly Dictionary<int, IPoolable[]> poolables = new Dictionary<int, IPoolable[]>(256);
         private readonly List<GameObject> active = new List<GameObject>(256);
 
-        private Transform root;
+        private readonly Transform root;
         private bool isReady;
 
-        public UniversalObjectPool([InjectOptional] PoolConfigSO config, [InjectOptional] BlockCatalogSO catalog)
+        public PrefabPool([Inject(Id = RootBindingId)] Transform root, [InjectOptional] PoolConfigSO config, [InjectOptional] BlockCatalogSO catalog)
         {
+            this.root = root;
             this.config = config;
             this.catalog = catalog;
         }
@@ -31,7 +34,6 @@ namespace SmashFast.Core.Pooling
                 return;
 
             isReady = true;
-            CreateRoot();
             PrewarmConfigPools();
             PrewarmCatalogPools();
         }
@@ -126,16 +128,6 @@ namespace SmashFast.Core.Pooling
         {
             if (instance != null)
                 CachePoolables(instance);
-        }
-
-        private void CreateRoot()
-        {
-            if (root != null)
-                return;
-
-            root = new GameObject("UniversalPool").transform;
-            if (Application.isPlaying)
-                Object.DontDestroyOnLoad(root.gameObject);
         }
 
         private void PrewarmConfigPools()

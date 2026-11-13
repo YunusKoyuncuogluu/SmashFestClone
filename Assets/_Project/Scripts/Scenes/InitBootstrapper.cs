@@ -1,9 +1,9 @@
 using Cysharp.Threading.Tasks;
-using SmashFast.Flow;
+using SmashFest.Flow;
 using UnityEngine.SceneManagement;
 using Zenject;
 
-namespace SmashFast.Scenes
+namespace SmashFest.Scenes
 {
     public class InitBootstrapper : IInitializable
     {
@@ -18,9 +18,7 @@ namespace SmashFast.Scenes
         {
             Scene activeScene = SceneManager.GetActiveScene();
             if (activeScene.name != SceneNames.InitScene)
-            {
                 return;
-            }
 
             sceneFlow.LoadMainMenuAsync().Forget();
         }

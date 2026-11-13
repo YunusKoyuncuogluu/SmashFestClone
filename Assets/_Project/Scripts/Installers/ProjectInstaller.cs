@@ -1,78 +1,74 @@
-using SmashFast.Core.Effects;
-using SmashFast.Core.Pooling;
-using SmashFast.Data;
-using SmashFast.Flow;
-using SmashFast.Progress;
-using SmashFast.Scenes;
-using SmashFast.UI;
+using SmashFest.Audio;
+using SmashFest.Core.Effects;
+using SmashFest.Core.Performance;
+using SmashFest.Core.Pooling;
+using SmashFest.Data;
+using SmashFest.Flow;
+using SmashFest.Progress;
+using SmashFest.Scenes;
+using SmashFest.UI;
 using UnityEngine;
 using Zenject;
 
-namespace SmashFast.Installers
+namespace SmashFest.Installers
 {
     public class ProjectInstaller : MonoInstaller
     {
         [SerializeField] private LevelDatabaseSO levelDatabase;
         [SerializeField] private PoolConfigSO poolConfig;
         [SerializeField] private UICatalogSO uiCatalog;
+        [SerializeField] private SoundLibrarySO soundLibrary;
+        [SerializeField] private FrameRateSettings frameRate = new FrameRateSettings();
+        [SerializeField] private Transform poolRoot;
+        [SerializeField] private SoundEmitter soundEmitterPrefab;
 
         public override void InstallBindings()
+        {
+            BindData();
+            BindUserInterface();
+            Container.BindInstance(frameRate).AsSingle();
+            Container.BindInterfacesAndSelfTo<FrameRateService>().AsSingle().NonLazy();
+            Container.Bind<GameSessionSlot>().AsSingle();
+            Container.Bind<PlayerDataStore>().AsSingle();
+            Container.BindInterfacesAndSelfTo<PlayerProgressService>().AsSingle().NonLazy();
+            Container.BindInterfacesAndSelfTo<SoundEmitterPool>().AsSingle().WithArguments(soundEmitterPrefab, poolRoot);
+            Container.BindInterfacesAndSelfTo<AudioService>().AsSingle().NonLazy();
+            Container.BindInstance(poolRoot).WithId(PrefabPool.RootBindingId);
+            Container.BindInterfacesAndSelfTo<PrefabPool>().AsSingle().NonLazy();
+            Container.BindInterfacesAndSelfTo<SceneFlowManager>().AsSingle().NonLazy();
+            Container.BindInterfacesAndSelfTo<InitBootstrapper>().AsSingle().NonLazy();
+
+            Container.BindExecutionOrder<FrameRateService>(-40);
+            Container.BindExecutionOrder<PlayerProgressService>(-30);
+            Container.BindExecutionOrder<AudioService>(-25);
+            Container.BindExecutionOrder<PrefabPool>(-20);
+            Container.BindExecutionOrder<InitBootstrapper>(10);
+        }
+
+        private void BindData()
         {
             if (levelDatabase != null)
             {
                 Container.Bind<LevelDatabaseSO>().FromInstance(levelDatabase).AsSingle();
                 Container.Bind<JsonLevelRepository>().FromMethod(_ => levelDatabase.Repository).AsSingle();
                 if (levelDatabase.BlockCatalog != null)
-                {
                     Container.Bind<BlockCatalogSO>().FromInstance(levelDatabase.BlockCatalog).AsSingle();
-                }
             }
 
             if (poolConfig != null)
-            {
                 Container.Bind<PoolConfigSO>().FromInstance(poolConfig).AsSingle();
-            }
 
             if (uiCatalog != null)
-            {
                 Container.Bind<UICatalogSO>().FromInstance(uiCatalog).AsSingle();
-            }
 
-            BindUserInterface();
-            Container.Bind<GameSessionSlot>().AsSingle();
-            Container.BindInterfacesAndSelfTo<PlayerProgressService>().AsSingle().NonLazy();
-            Container.BindInterfacesAndSelfTo<FadeMaterialLibrary>().AsSingle();
-            Container.BindInterfacesAndSelfTo<UniversalObjectPool>().AsSingle().NonLazy();
-            Container.BindInterfacesAndSelfTo<SceneFlowManager>().AsSingle().NonLazy();
-            Container.BindInterfacesAndSelfTo<InitBootstrapper>().AsSingle().NonLazy();
-
-            Container.BindExecutionOrder<PlayerProgressService>(-30);
-            Container.BindExecutionOrder<UniversalObjectPool>(-20);
-            Container.BindExecutionOrder<InitBootstrapper>(10);
+            if (soundLibrary != null)
+                Container.Bind<SoundLibrarySO>().FromInstance(soundLibrary).AsSingle();
         }
 
         private void BindUserInterface()
         {
-            if (Container.IsValidating)
-            {
-                Container.Bind<UIManager>().FromNewComponentOnNewGameObject().AsSingle();
-                return;
-            }
-
-            if (uiCatalog == null || uiCatalog.CanvasPrefab == null)
-            {
-                return;
-            }
-
-            GameObject canvasObject = Container.InstantiatePrefab(uiCatalog.CanvasPrefab);
-            UnityEngine.Object.DontDestroyOnLoad(canvasObject);
-            UIManager manager = canvasObject.GetComponent<UIManager>();
-            if (manager == null)
-            {
-                return;
-            }
-
-            Container.Bind<UIManager>().FromInstance(manager).AsSingle();
+            if (uiCatalog != null && uiCatalog.CanvasPrefab != null)
+                Container.Bind<IUIManager>().To<UIManager>().FromComponentInNewPrefab(uiCatalog.CanvasPrefab).AsSingle().NonLazy();
         }
     }
 }

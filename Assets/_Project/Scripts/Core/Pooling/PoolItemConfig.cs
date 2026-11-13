@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace SmashFast.Core.Pooling
+namespace SmashFest.Core.Pooling
 {
     [Serializable]
     public struct PoolItemConfig

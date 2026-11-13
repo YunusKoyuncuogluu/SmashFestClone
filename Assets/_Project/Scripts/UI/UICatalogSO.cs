@@ -1,9 +1,9 @@
-using SmashFast.UI.Panels;
+using SmashFest.UI.Panels;
 using UnityEngine;
 
-namespace SmashFast.UI
+namespace SmashFest.UI
 {
-    [CreateAssetMenu(fileName = "UICatalog", menuName = "SmashFast/UI Catalog", order = 3)]
+    [CreateAssetMenu(fileName = "UICatalog", menuName = "SmashFest/UI Catalog", order = 3)]
     public class UICatalogSO : ScriptableObject
     {
         [SerializeField] private GameObject canvasPrefab;

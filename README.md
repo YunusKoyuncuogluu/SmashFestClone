@@ -127,7 +127,7 @@ SmashFestClone/
 │   │   ├── Demigiant/               # DOTween
 │   │   └── NiceVibrations/          # Haptics
 │   └── Settings/                    # URP assets
-├── Packages/                        # URP, UniTask, Input System, uGUI
+├── Packages/                        # Manifest plus embedded UniTask, UI Particle and editor tools
 └── ProjectSettings/
 ```
 
@@ -150,7 +150,12 @@ SmashFestClone/
 
 ## 📁 Note:
 
-1. Open this folder in **Unity `6000.3.21f1`**. Package resolution pulls **URP 17.3.0**, **UniTask** and the **Input System**. Zenject, DOTween and Nice Vibrations are already under `Assets/Plugins`, and Toony Colors Pro 2 under `Assets/JMO Assets`.
+1. Clone or download the repository and open the folder in **Unity `6000.3.21f1`** through Unity Hub. Nothing else needs to be installed: there is no Git LFS, and Git itself is not required. Every third-party dependency ships with the project:
+   - Zenject, DOTween and Nice Vibrations under `Assets/Plugins`, and Toony Colors Pro 2 under `Assets/JMO Assets`.
+   - UniTask, UI Particle, Unity Toolbar Extender, Custom Play Button and Unity MCP as embedded packages under `Packages/`.
+   - Unity's own packages (URP, Input System, TextMeshPro and others) are resolved by the Unity registry on first open.
+
+   Add **Android Build Support** to the editor in Unity Hub to build the APK.
 2. Build order is `InitScene` → `MainMenuScene` → `GameScene`. Enter Play Mode from **`Assets/_Project/Scenes/InitScene.unity`**. That scene loads the main menu; the menu loads `GameScene`.
 3. Levels live in **`Assets/_Project/Resources/Levels/LevelsDatabase.json`**. Edit them with **Tools → SmashFest → Level Blueprint Editor**, which can also regenerate all 1000 levels.
 4. Block families, masses and scale are in **`Assets/_Project/Data/BlockCatalog.asset`**. Sounds and volumes are in **`Assets/_Project/Data/SoundLibrary.asset`**.

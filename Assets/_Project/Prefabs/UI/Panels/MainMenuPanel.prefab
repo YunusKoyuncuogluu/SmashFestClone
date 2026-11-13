@@ -667,8 +667,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.UI.ButtonPop
   pressedScale: 0.9
-  stiffness: 420
-  damping: 16
+  pressDuration: 0.08
+  releaseDuration: 0.25
 --- !u!1 &2360507731893987104
 GameObject:
   m_ObjectHideFlags: 0
@@ -806,8 +806,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.UI.ButtonPop
   pressedScale: 0.9
-  stiffness: 420
-  damping: 16
+  pressDuration: 0.08
+  releaseDuration: 0.25
 --- !u!1 &2625843696576528369
 GameObject:
   m_ObjectHideFlags: 0

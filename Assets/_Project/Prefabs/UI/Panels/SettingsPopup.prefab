@@ -677,8 +677,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.UI.ButtonPop
   pressedScale: 0.9
-  stiffness: 420
-  damping: 16
+  pressDuration: 0.08
+  releaseDuration: 0.25
 --- !u!1 &4843181524975908958
 GameObject:
   m_ObjectHideFlags: 0
@@ -964,8 +964,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.UI.ButtonPop
   pressedScale: 0.9
-  stiffness: 420
-  damping: 16
+  pressDuration: 0.08
+  releaseDuration: 0.25
 --- !u!1 &6324593957433593248
 GameObject:
   m_ObjectHideFlags: 0
@@ -1204,8 +1204,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.UI.ButtonPop
   pressedScale: 0.9
-  stiffness: 420
-  damping: 16
+  pressDuration: 0.08
+  releaseDuration: 0.25
 --- !u!1 &7110481556327503762
 GameObject:
   m_ObjectHideFlags: 0
@@ -2175,8 +2175,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.UI.ButtonPop
   pressedScale: 0.9
-  stiffness: 420
-  damping: 16
+  pressDuration: 0.08
+  releaseDuration: 0.25
 --- !u!1 &9189055728272753864
 GameObject:
   m_ObjectHideFlags: 0
@@ -2566,8 +2566,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SmashFest.Runtime::SmashFest.UI.ButtonPop
   pressedScale: 0.9
-  stiffness: 420
-  damping: 16
+  pressDuration: 0.08
+  releaseDuration: 0.25
 --- !u!1 &7400405823439548416
 GameObject:
   m_ObjectHideFlags: 0

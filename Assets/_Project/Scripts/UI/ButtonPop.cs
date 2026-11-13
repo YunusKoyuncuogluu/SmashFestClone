@@ -1,3 +1,4 @@
+using DG.Tweening;
 using SmashFest.Audio;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -9,20 +10,16 @@ namespace SmashFest.UI
     public class ButtonPop : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler, IPointerClickHandler
     {
         [SerializeField, Range(0.7f, 1f)] private float pressedScale = 0.9f;
-        [SerializeField, Min(1f)] private float stiffness = 420f;
-        [SerializeField, Min(0f)] private float damping = 16f;
+        [SerializeField, Min(0.01f)] private float pressDuration = 0.08f;
+        [SerializeField, Min(0.01f)] private float releaseDuration = 0.25f;
 
         private IAudioService audioService;
         private Selectable selectable;
         private Vector3 baseScale = Vector3.one;
-        private float scale = 1f;
-        private float velocity;
-        private float target = 1f;
-        private bool isSettled = true;
         private bool isPressed;
 
         [Inject]
-        public void Construct([InjectOptional] IAudioService audio) => this.audioService = audio;
+        public void Construct([InjectOptional] IAudioService audio) => audioService = audio;
 
         private void Awake()
         {
@@ -32,24 +29,21 @@ namespace SmashFest.UI
 
         private void OnDisable()
         {
-            scale = 1f;
-            velocity = 0f;
-            target = 1f;
-            isSettled = true;
-            isPressed = false;
+            transform.DOKill();
             transform.localScale = baseScale;
+            isPressed = false;
         }
 
         public void OnPointerDown(PointerEventData eventData)
         {
             isPressed = IsInteractable();
             if (isPressed)
-                SetTarget(pressedScale);
+                ScaleTo(pressedScale, pressDuration, Ease.OutQuad);
         }
 
-        public void OnPointerUp(PointerEventData eventData) => SetTarget(1f);
+        public void OnPointerUp(PointerEventData eventData) => ScaleTo(1f, releaseDuration, Ease.OutBack);
 
-        public void OnPointerExit(PointerEventData eventData) => SetTarget(1f);
+        public void OnPointerExit(PointerEventData eventData) => ScaleTo(1f, releaseDuration, Ease.OutBack);
 
         public void OnPointerClick(PointerEventData eventData)
         {
@@ -62,30 +56,14 @@ namespace SmashFest.UI
 
         private bool IsInteractable() => selectable == null || selectable.IsInteractable();
 
-        private void SetTarget(float value)
+        private void ScaleTo(float scale, float duration, Ease ease)
         {
-            target = value;
-            isSettled = false;
-        }
-
-        private void Update()
-        {
-            if (isSettled)
-                return;
-
-            float deltaTime = Mathf.Min(Time.unscaledDeltaTime, 1f / 30f);
-            velocity += (target - scale) * stiffness * deltaTime;
-            velocity *= Mathf.Exp(-damping * deltaTime);
-            scale += velocity * deltaTime;
-
-            if (Mathf.Abs(target - scale) < 0.001f && Mathf.Abs(velocity) < 0.01f)
-            {
-                scale = target;
-                velocity = 0f;
-                isSettled = true;
-            }
-
-            transform.localScale = baseScale * scale;
+            transform.DOKill();
+            transform.DOScale(baseScale * scale, duration)
+                .SetEase(ease)
+                .SetUpdate(true)
+                .SetRecyclable(true)
+                .SetLink(gameObject);
         }
     }
 }

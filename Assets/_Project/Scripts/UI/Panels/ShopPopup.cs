@@ -1,6 +1,4 @@
-using SmashFest.Progress;
 using SmashFest.Shop;
-using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
@@ -9,22 +7,17 @@ namespace SmashFest.UI.Panels
 {
     public class ShopPopup : UIPanelBase
     {
-        private const string CoinFormat = "{0:0}";
-
         [SerializeField] private SkinShopItem[] items;
-        [SerializeField] private TMP_Text coinLabel;
         [SerializeField] private Button closeButton;
 
         private IUIManager ui;
         private IBallSkinShop shop;
-        private ICoinWallet wallet;
 
         [Inject]
-        public void Construct(IUIManager ui, IBallSkinShop shop, ICoinWallet wallet)
+        public void Construct(IUIManager ui, IBallSkinShop shop)
         {
             this.ui = ui;
             this.shop = shop;
-            this.wallet = wallet;
         }
 
         private void Awake()
@@ -50,9 +43,6 @@ namespace SmashFest.UI.Panels
 
         private void Refresh()
         {
-            if (coinLabel != null)
-                coinLabel.SetText(CoinFormat, wallet.Coins);
-
             int count = Mathf.Min(items.Length, shop.Skins.Count);
             for (int i = 0; i < items.Length; i++)
             {

@@ -12,6 +12,7 @@ namespace SmashFest.Fracture
         [SerializeField, Range(2, 100)] private int cellCount = 8;
         [SerializeField] private int randomSeed = 1;
         [SerializeField] private Material interiorMaterial;
+        [SerializeField] private Material fallbackMaterial;
         [SerializeField] private float interiorUVScale = 1f;
         [SerializeField, Range(0f, 2f)] private float previewExplosionOffset;
         [SerializeField] private float totalMass = 10f;
@@ -323,37 +324,14 @@ namespace SmashFest.Fracture
 
         private void EnsurePreviewMaterials(Material[] materials)
         {
-            if (materials == null || materials.Length == 0)
+            if (materials == null)
                 return;
 
-            Material fallback = null;
             for (int i = 0; i < materials.Length; i++)
             {
-                if (materials[i] != null)
-                    continue;
-
-                if (fallback == null)
-                    fallback = ResolveFallbackMaterial();
-
-                materials[i] = fallback;
+                if (materials[i] == null)
+                    materials[i] = fallbackMaterial;
             }
-        }
-
-        private Material ResolveFallbackMaterial()
-        {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null)
-                shader = Shader.Find("Standard");
-
-            if (shader == null)
-                shader = Shader.Find("Hidden/InternalErrorShader");
-
-            return new Material(shader)
-            {
-                name = "CellFracturePreviewFallback",
-                hideFlags = HideFlags.HideAndDontSave,
-                color = new Color(0.75f, 0.75f, 0.75f, 1f)
-            };
         }
 
         public FracturedPiece[] BakeFracturePieces()

@@ -12,6 +12,7 @@ namespace SmashFest.LevelEditor
         private SerializedProperty cellCountProperty;
         private SerializedProperty randomSeedProperty;
         private SerializedProperty interiorMaterialProperty;
+        private SerializedProperty fallbackMaterialProperty;
         private SerializedProperty interiorUVScaleProperty;
         private SerializedProperty previewExplosionOffsetProperty;
         private SerializedProperty totalMassProperty;
@@ -25,6 +26,7 @@ namespace SmashFest.LevelEditor
             cellCountProperty = serializedObject.FindProperty("cellCount");
             randomSeedProperty = serializedObject.FindProperty("randomSeed");
             interiorMaterialProperty = serializedObject.FindProperty("interiorMaterial");
+            fallbackMaterialProperty = serializedObject.FindProperty("fallbackMaterial");
             interiorUVScaleProperty = serializedObject.FindProperty("interiorUVScale");
             previewExplosionOffsetProperty = serializedObject.FindProperty("previewExplosionOffset");
             totalMassProperty = serializedObject.FindProperty("totalMass");
@@ -43,6 +45,7 @@ namespace SmashFest.LevelEditor
             EditorGUILayout.PropertyField(cellCountProperty);
             EditorGUILayout.PropertyField(randomSeedProperty);
             EditorGUILayout.PropertyField(interiorMaterialProperty);
+            EditorGUILayout.PropertyField(fallbackMaterialProperty);
             EditorGUILayout.PropertyField(interiorUVScaleProperty);
             EditorGUILayout.PropertyField(previewExplosionOffsetProperty);
 
